@@ -94,6 +94,18 @@ def init_db() -> None:
                 metadata TEXT DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS content_metrics (
+                id TEXT PRIMARY KEY,
+                content_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                views INTEGER DEFAULT 0,
+                likes INTEGER DEFAULT 0,
+                shares INTEGER DEFAULT 0,
+                comments INTEGER DEFAULT 0,
+                collected_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (content_id) REFERENCES contents(id)
+            );
         """)
         conn.commit()
     finally:

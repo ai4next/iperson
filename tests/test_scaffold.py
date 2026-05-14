@@ -36,7 +36,7 @@ from iperson.utils.output import (
 
 class TestVersion:
     def test_version(self) -> None:
-        assert __version__ == "0.2.0"
+        assert __version__ == "0.3.0"
 
 
 class TestConfig:
