@@ -452,3 +452,18 @@ class TestPluginDefaults:
 
     def test_plugin_tags_default(self) -> None:
         assert StageOne.tags == []
+
+
+from iperson.pipeline.errors import PipelineError
+
+
+def test_pipeline_error_defaults() -> None:
+    err = PipelineError(error_code="TEST", stage="test", message="test error")
+    assert err.error_code == "TEST"
+    assert err.recoverable is False
+    assert err.timestamp is not None
+
+
+def test_pipeline_error_recoverable() -> None:
+    err = PipelineError(error_code="TEST", stage="test", message="recoverable", recoverable=True)
+    assert err.recoverable is True
