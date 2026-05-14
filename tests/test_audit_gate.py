@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from iperson.core.audit.gate import AuditGate
+from iperson.core.audit.gate import AuditGate, check_gate, compute_weighted_score
 from iperson.core.audit.grounding import check_grounding
 from iperson.core.audit.keyword_check import check_keyword_fit
 from iperson.core.audit.platform_rules import check_platform_rules
-from iperson.core.audit.report import AuditReport
+from iperson.core.audit.report import AuditReport, build_audit_json, format_audit_report
 from iperson.core.audit.structure_check import check_structure
 
 GOOD_CONTENT = """# RAG技术入门
@@ -24,6 +24,11 @@ RAG通过结合检索和生成，显著提升了问答系统的准确性。
 ## 总结
 
 RAG技术值得每一个AI从业者学习。"""
+
+
+# =============================================================================
+# AuditReport (unchanged from original)
+# =============================================================================
 
 
 class TestAuditReport:
@@ -83,6 +88,11 @@ class TestAuditReport:
         assert d["scores"]["grounding"] == 0.9
 
 
+# =============================================================================
+# Grounding
+# =============================================================================
+
+
 class TestGrounding:
     """Tests for check_grounding()."""
 
@@ -119,91 +129,130 @@ class TestGrounding:
         assert result["status"] == "fail"
 
 
+# =============================================================================
+# Keyword Check (new sub-scores API)
+# =============================================================================
+
+
 class TestKeywordCheck:
-    """Tests for check_keyword_fit()."""
+    """Tests for check_keyword_fit() with sub-scores and suggestions."""
 
-    def test_keywords_present(self) -> None:
-        """Keywords in title and body yields score >= 0.5."""
-        content = "# RAG技术入门\n\nRAG是重要的AI技术。"
-        result = check_keyword_fit(content, ["RAG", "技术", "AI"])
-
-        assert result["score"] >= 0.5
-        assert result["keyword_in_title"] is True
-        assert result["keyword_in_body"] is True
-
-    def test_keywords_missing(self) -> None:
-        """Keywords not present yields score < 0.5."""
-        content = "# 今天天气不错\n\n适合出去散步。"
-        result = check_keyword_fit(content, ["RAG", "知识库", "向量检索"])
-
-        assert result["score"] <= 0.5
-        assert result["status"] == "fail"
-
-    def test_empty_keywords(self) -> None:
-        """No keywords configured yields score 1.0."""
-        content = "任何内容都不需要检查关键词。"
-        result = check_keyword_fit(content, [])
+    def test_clean_content_high_score(self) -> None:
+        """Content without banned or sensitive words yields high score."""
+        content = "这是一个干净的测试文本，不包含任何问题词汇。"
+        result = check_keyword_fit(content)
 
         assert result["score"] == 1.0
-        assert result["status"] == "pass"
+        assert result["sub_scores"]["banned_word_ratio"] == 1.0
+        assert result["sub_scores"]["sensitive_word_ratio"] == 1.0
+        assert result["suggestions"] == []
 
-    def test_primary_keywords_subset(self) -> None:
-        """Only primary keywords are scored."""
-        content = "# RAG技术\n\nRAG是重要的AI技术。"
+    def test_banned_words_lower_score(self) -> None:
+        """Content with banned words yields score < 1.0."""
+        content = "总的来说，这是一个测试。首先，我们要明确目标。"
+        result = check_keyword_fit(content)
+
+        assert result["score"] < 1.0
+        assert result["sub_scores"]["banned_word_ratio"] < 1.0
+        assert "禁用词" in result["suggestions"][0]
+
+    def test_sensitive_words_lower_score(self) -> None:
+        """Content with sensitive words yields score < 1.0."""
+        content = "这是绝对最好的产品，一定是你的第一选择。"
+        result = check_keyword_fit(content)
+
+        assert result["score"] < 1.0
+        assert result["sub_scores"]["sensitive_word_ratio"] < 1.0
+        assert "敏感词" in result["suggestions"][0]
+
+    def test_sub_scores_and_suggestions_keys(self) -> None:
+        """Result always contains sub_scores, suggestions, and details keys."""
+        result = check_keyword_fit("普通文本内容。")
+
+        assert "sub_scores" in result
+        assert "suggestions" in result
+        assert "details" in result
+        assert "banned_found" in result["details"]
+        assert "sensitive_found" in result["details"]
+
+    def test_config_override(self) -> None:
+        """Config can override banned and sensitive word lists."""
+        content = "foo bar baz"
         result = check_keyword_fit(
-            content, ["RAG", "技术", "AI", "extra"], primary_keywords=["RAG", "技术"]
+            content,
+            config={
+                "banned_words": ["foo"],
+                "sensitive_words": ["bar"],
+            },
         )
 
-        assert result["score"] == 1.0
-        assert result["primary_keywords"] == ["RAG", "技术"]
-        assert result["keyword_in_title"] is True
+        assert result["score"] < 1.0
+        assert result["details"]["banned_found"] == ["foo"]
+        assert result["details"]["sensitive_found"] == ["bar"]
+
+
+# =============================================================================
+# Structure Check (new sub-scores API)
+# =============================================================================
 
 
 class TestStructureCheck:
-    """Tests for check_structure()."""
+    """Tests for check_structure() with sub-scores."""
 
     def test_good_structure(self) -> None:
-        """Content with H1, H2, lists yields score >= 0.5."""
+        """Content with H1, headings yields decent score."""
         result = check_structure(GOOD_CONTENT)
 
         assert result["score"] >= 0.5
-        assert result["has_h1"] is True
-        assert result["has_h2"] is True
-        assert result["has_list"] is True
+        assert result["sub_scores"]["heading_hierarchy"] >= 0.5
 
-    def test_short_content(self) -> None:
-        """Just text without structure yields score < 0.5."""
+    def test_no_headings(self) -> None:
+        """Content without headings gets low heading score."""
         content = "这是一段简单的文字，没有任何标题和列表。"
         result = check_structure(content)
 
-        assert result["score"] <= 0.5
-        assert result["has_h1"] is False
-        assert result["has_h2"] is False
-        assert result["has_list"] is False
-        assert result["paragraph_count"] == 1
+        assert result["sub_scores"]["heading_hierarchy"] <= 0.3
+        assert "缺少标题" in result["suggestions"][0]
+
+    def test_missing_h1(self) -> None:
+        """Content with sub-headings but no H1 is penalized."""
+        content = "## Section 1\n\nSome text here.\n\n### Subsection\n\nMore text."
+        result = check_structure(content)
+
+        assert result["sub_scores"]["heading_hierarchy"] < 1.0
+        assert "一级标题" in result["suggestions"][0]
 
     def test_full_structure_score(self) -> None:
-        """Content with H1, H2, H3, list, and paragraphs yields max score."""
+        """Well-structured content with headings and transitions."""
         content = """# Title
+
+Because this is an example, we need transitions. Therefore we use them here.
 
 ## Section
 
-### Subsection
+However, we also need variety. For example, this paragraph works.
 
-Some paragraph text here.
-
-1. Item one
-2. Item two
-
-Another paragraph."""
+Furthermore, another paragraph with good length here."""
         result = check_structure(content)
 
-        assert result["has_h1"] is True
-        assert result["has_h2"] is True
-        assert result["has_h3"] is True
-        assert result["has_list"] is True
-        assert result["paragraph_count"] >= 3
-        assert result["score"] == 1.0
+        assert result["score"] > 0.5
+        assert "sub_scores" in result
+        assert "heading_hierarchy" in result["sub_scores"]
+        assert "paragraph_length_distribution" in result["sub_scores"]
+        assert "logical_flow_score" in result["sub_scores"]
+
+    def test_flow_score_low(self) -> None:
+        """Content without transitions gets low flow score and suggestion."""
+        content = "# Title\n\nNo transition words here at all."
+        result = check_structure(content)
+
+        if result["sub_scores"]["logical_flow_score"] < 0.5:
+            assert any("连贯性" in s for s in result["suggestions"])
+
+
+# =============================================================================
+# Platform Rules
+# =============================================================================
 
 
 class TestPlatformRules:
@@ -255,51 +304,91 @@ class TestPlatformRules:
         assert len(result["issues"]) >= 1
 
 
+# =============================================================================
+# AuditGate (new weighted scoring API)
+# =============================================================================
+
+
 class TestAuditGate:
-    """Integration tests for the full AuditGate."""
+    """Tests for the new AuditGate with weighted scoring and suggestions."""
+
+    def _make_dimension_scores(
+        self, overrides: dict | None = None
+    ) -> dict[str, dict]:
+        """Helper to build a default set of dimension scores."""
+        base = {
+            "keyword_fit": {
+                "score": 0.9,
+                "sub_scores": {
+                    "banned_word_ratio": 0.9,
+                    "sensitive_word_ratio": 0.9,
+                },
+                "suggestions": [],
+            },
+            "structure": {
+                "score": 0.85,
+                "sub_scores": {
+                    "heading_hierarchy": 0.85,
+                    "paragraph_length_distribution": 0.8,
+                    "logical_flow_score": 0.9,
+                },
+                "suggestions": [],
+            },
+            "platform_rules": {
+                "score": 1.0,
+                "sub_scores": {},
+                "suggestions": [],
+            },
+            "ai_score": {
+                "score": 0.2,
+                "sub_scores": {},
+                "suggestions": [],
+            },
+            "style_consistency": {
+                "score": 0.9,
+                "sub_scores": {},
+                "suggestions": [],
+            },
+            "grounding": {
+                "score": 0.8,
+                "sub_scores": {},
+                "suggestions": [],
+            },
+        }
+        if overrides:
+            base.update(overrides)
+        return base
 
     def test_full_audit_pass(self) -> None:
-        """Good content with keywords and KB yields pass or review."""
+        """Good dimension scores yield pass status."""
         gate = AuditGate()
-        kb_chunks = [
-            {"content": "RAG（检索增强生成）是当前AI领域的热门技术。"},
-            {"content": "RAG通过结合检索和生成，显著提升了问答系统的准确性。"},
-            {"content": "搭建知识库、配置向量检索、接入大模型是RAG实践的关键步骤。"},
-        ]
+        dim_scores = self._make_dimension_scores()
+        result = gate.evaluate(dim_scores)
 
-        result = gate.evaluate(
-            content=GOOD_CONTENT,
-            keywords=["RAG", "检索增强生成", "知识库", "向量检索", "大模型"],
-            platform="xiaohongshu",
-            kb_chunks=kb_chunks,
-            style_score=0.9,
-        )
+        assert result["overall_status"] == "pass"
+        assert result["overall_score"] >= 0.7
+        assert result["below_min_dimension"] == []
 
-        assert result["overall_status"] in ("pass", "review")
-        assert result["scores"]["grounding"] > 0
-        assert result["scores"]["keyword_fit"] > 0
-
-    def test_audit_empty_content(self) -> None:
-        """Empty content fails the audit."""
+    def test_audit_fail_low_score(self) -> None:
+        """Very low dimension scores yield fail status."""
         gate = AuditGate()
-        result = gate.evaluate(
-            content="",
-            keywords=["RAG"],
-            platform="xiaohongshu",
+        dim_scores = self._make_dimension_scores(
+            {
+                "keyword_fit": {"score": 0.1, "suggestions": []},
+                "structure": {"score": 0.2, "suggestions": []},
+                "platform_rules": {"score": 0.3, "suggestions": []},
+                "style_consistency": {"score": 0.2, "suggestions": []},
+            }
         )
+        result = gate.evaluate(dim_scores)
 
         assert result["overall_status"] == "fail"
 
     def test_audit_scores_structure(self) -> None:
         """Result has all 6 expected dimension keys."""
         gate = AuditGate()
-        result = gate.evaluate(
-            content=GOOD_CONTENT,
-            keywords=["RAG"],
-            platform="xiaohongshu",
-            kb_chunks=[{"content": "RAG技术"}],
-            style_score=0.8,
-        )
+        dim_scores = self._make_dimension_scores()
+        result = gate.evaluate(dim_scores)
 
         expected_keys = {
             "grounding",
@@ -311,25 +400,174 @@ class TestAuditGate:
         }
         assert expected_keys.issubset(result["scores"].keys())
 
-    def test_audit_with_ai_score_passed(self) -> None:
-        """Pre-computed ai_score is used correctly."""
+    def test_audit_empty_scores(self) -> None:
+        """Empty dimension scores yields fail."""
         gate = AuditGate()
-        result = gate.evaluate(
-            content=GOOD_CONTENT,
-            keywords=["RAG"],
-            platform="xiaohongshu",
-            ai_score=0.15,  # low AI-ness = good
-        )
+        result = gate.evaluate({})
 
-        assert result["scores"]["ai_score"] == 0.15
+        assert result["overall_status"] == "fail"
+        assert result["overall_score"] == 0.0
 
-    def test_audit_with_high_ai_score(self) -> None:
-        """High AI-ness is flagged appropriately."""
+    def test_sub_scores_in_result(self) -> None:
+        """Sub-scores from each dimension appear in the result."""
         gate = AuditGate()
-        result = gate.evaluate(
-            content="值得注意的是，总的来说，首先，其次，最后。",
-            keywords=[],
-            platform="xiaohongshu",
-        )
+        dim_scores = self._make_dimension_scores()
+        result = gate.evaluate(dim_scores)
 
-        assert result["scores"]["ai_score"] > 0.3
+        assert "sub_scores" in result
+        assert "keyword_fit" in result["sub_scores"]
+        assert "structure" in result["sub_scores"]
+        assert "banned_word_ratio" in result["sub_scores"]["keyword_fit"]
+        assert "heading_hierarchy" in result["sub_scores"]["structure"]
+
+    def test_suggestions_collected(self) -> None:
+        """Suggestions from all dimensions are collected."""
+        gate = AuditGate()
+        dim_scores = self._make_dimension_scores(
+            {
+                "keyword_fit": {
+                    "score": 0.5,
+                    "suggestions": ["禁用词使用: 总的来说"],
+                },
+                "structure": {
+                    "score": 0.3,
+                    "suggestions": ["缺少标题", "段落过长"],
+                },
+            }
+        )
+        result = gate.evaluate(dim_scores)
+
+        assert len(result["suggestions"]) == 3
+        assert "禁用词使用: 总的来说" in result["suggestions"]
+        assert "缺少标题" in result["suggestions"]
+
+
+# =============================================================================
+# AuditGate: weighted scoring
+# =============================================================================
+
+
+class TestWeightedScoring:
+    """Tests for compute_weighted_score and AuditGate weights."""
+
+    def test_default_weights_equal(self) -> None:
+        """Default weights treat all dimensions equally."""
+        scores = {"a": 1.0, "b": 0.0}
+        result = compute_weighted_score(scores)
+        assert result == 0.5
+
+    def test_custom_weights(self) -> None:
+        """Custom weights bias the overall score."""
+        gate = AuditGate({"weights": {"keyword_fit": 2.0, "structure": 1.0}})
+        dim_scores = {
+            "keyword_fit": {"score": 0.8, "sub_scores": {}, "suggestions": []},
+            "structure": {"score": 0.6, "sub_scores": {}, "suggestions": []},
+        }
+        result = gate.evaluate(dim_scores)
+        # (0.8*2 + 0.6*1) / 3 = 2.2 / 3 = 0.733...
+        assert abs(result["overall_score"] - 0.733) < 0.01
+
+    def test_min_dimension_score_blocks(self) -> None:
+        """Dimensions below min_dimension_score appear in below_min list."""
+        gate = AuditGate({"min_dimension_score": 0.5})
+        dim_scores = {
+            "keyword_fit": {
+                "score": 0.9,
+                "sub_scores": {},
+                "suggestions": [],
+            },
+            "structure": {
+                "score": 0.3,
+                "sub_scores": {},
+                "suggestions": ["缺少标题"],
+            },
+        }
+        result = gate.evaluate(dim_scores)
+        assert "structure" in result["below_min_dimension"]
+
+    def test_min_dimension_score_prevents_pass(self) -> None:
+        """Below-min dimensions prevent pass even if overall score is high."""
+        gate = AuditGate({"min_dimension_score": 0.5})
+        dim_scores = {
+            "keyword_fit": {"score": 0.9, "sub_scores": {}, "suggestions": []},
+            "structure": {"score": 0.3, "sub_scores": {}, "suggestions": []},
+        }
+        result = gate.evaluate(dim_scores)
+        assert result["overall_status"] != "pass"
+
+    def test_zero_weight_dimension_ignored(self) -> None:
+        """Dimension with zero weight does not affect score."""
+        gate = AuditGate({"weights": {"a": 1.0, "b": 0.0}})
+        dim_scores = {
+            "a": {"score": 1.0, "sub_scores": {}, "suggestions": []},
+            "b": {"score": 0.0, "sub_scores": {}, "suggestions": []},
+        }
+        result = gate.evaluate(dim_scores)
+        assert result["overall_score"] == 1.0
+
+
+# =============================================================================
+# Legacy check_gate
+# =============================================================================
+
+
+class TestLegacyGate:
+    """Tests for the backward-compatible check_gate()."""
+
+    def test_check_gate_pass(self) -> None:
+        """check_gate returns pass for high scores."""
+        result = check_gate({"a": 0.9, "b": 0.8})
+        assert result["overall_status"] == "pass"
+
+    def test_check_gate_fail(self) -> None:
+        """check_gate returns fail for low scores."""
+        result = check_gate({"a": 0.2, "b": 0.1})
+        assert result["overall_status"] == "fail"
+
+    def test_check_gate_empty(self) -> None:
+        """check_gate handles empty scores gracefully."""
+        result = check_gate({})
+        assert result["overall_status"] == "fail"
+
+
+# =============================================================================
+# Report formatting
+# =============================================================================
+
+
+class TestReportFormatting:
+    """Tests for format_audit_report and build_audit_json."""
+
+    def test_format_audit_report(self) -> None:
+        """format_audit_report produces expected text format."""
+        gate_result = {
+            "overall_score": 0.85,
+            "overall_status": "pass",
+            "scores": {"keyword_fit": 0.9, "structure": 0.8},
+            "sub_scores": {},
+            "suggestions": ["建议1", "建议2"],
+        }
+        text = format_audit_report(gate_result)
+
+        assert "审核报告" in text
+        assert "0.85" in text
+        assert "pass" in text
+        assert "建议1" in text
+        assert "建议2" in text
+        assert "keyword_fit" in text
+
+    def test_build_audit_json(self) -> None:
+        """build_audit_json produces expected JSON-serializable dict."""
+        gate_result = {
+            "overall_score": 0.75,
+            "overall_status": "review",
+            "scores": {"keyword_fit": 0.7},
+            "sub_scores": {"keyword_fit": {"banned_word_ratio": 0.7}},
+            "suggestions": ["改进建议"],
+        }
+        d = build_audit_json(gate_result)
+
+        assert d["overall_score"] == 0.75
+        assert d["overall_status"] == "review"
+        assert d["suggestions"] == ["改进建议"]
+        assert "generated_at" in d

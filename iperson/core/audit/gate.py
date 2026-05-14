@@ -2,95 +2,130 @@ from __future__ import annotations
 
 from typing import Any
 
-from iperson.core.audit.grounding import check_grounding
-from iperson.core.audit.keyword_check import check_keyword_fit
-from iperson.core.audit.platform_rules import check_platform_rules
-from iperson.core.audit.report import AuditReport
-from iperson.core.audit.structure_check import check_structure
-from iperson.core.humanizer.scorer import score_ai_ness
+
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "keyword_fit": 1.0,
+    "structure": 1.0,
+    "platform_rules": 1.0,
+    "ai_score": 1.0,
+    "style_consistency": 1.0,
+    "grounding": 1.0,
+}
+
+DEFAULT_THRESHOLDS: dict[str, float] = {"pass": 0.7, "review": 0.4}
+
+
+def compute_weighted_score(
+    scores: dict[str, float], weights: dict[str, float] | None = None
+) -> float:
+    """Compute a weighted average of dimension scores."""
+    w = weights or DEFAULT_WEIGHTS
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for dim, score in scores.items():
+        weight = w.get(dim, 1.0)
+        weighted_sum += score * weight
+        total_weight += weight
+    return weighted_sum / total_weight if total_weight > 0 else 0.0
 
 
 class AuditGate:
-    """Orchestrates the 6-dimension quality audit for generated content.
+    """Orchestrates quality audit evaluation with weighted scoring.
 
-    Dimensions:
-        1. grounding — factual accuracy against KB
-        2. keyword_fit — keyword presence
-        3. structure — document structure quality
-        4. platform_rules — platform-specific constraint compliance
-        5. style_consistency — adherence to target style
-        6. ai_score — AI-ness score (lower is better)
+    Evaluates pre-computed dimension scores against configurable thresholds
+    and minimum dimension scores.
+
+    Args:
+        config: Optional dict with keys:
+            - weights: dict[str, float] per-dimension weights
+            - thresholds: dict[str, float] with "pass" and "review" keys
+            - min_dimension_score: float, minimum acceptable score per dimension
     """
 
-    THRESHOLDS: dict[str, float] = {
-        "grounding": 0.8,
-        "keyword_fit": 0.7,
-        "structure": 0.7,
-        "platform_rules": 0.7,
-        "style_consistency": 0.7,
-        "ai_score": 0.35,
-    }
-
-    CRITICAL_DIMENSIONS: set[str] = {"grounding", "keyword_fit"}
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.config = config or {}
+        self.weights = self.config.get("weights", DEFAULT_WEIGHTS)
+        self.thresholds = self.config.get("thresholds", DEFAULT_THRESHOLDS)
+        self.min_dimension_score = self.config.get("min_dimension_score", 0.0)
 
     def evaluate(
-        self,
-        content: str,
-        keywords: list[str],
-        platform: str = "xiaohongshu",
-        kb_chunks: list[dict] | None = None,
-        style_score: float | None = None,
-        ai_score: float | None = None,
+        self, dimension_scores: dict[str, dict[str, Any]]
     ) -> dict[str, Any]:
-        """Run all 6 dimension checks and produce an audit report.
+        """Evaluate dimension scores against thresholds.
 
         Args:
-            content: The text to audit.
-            keywords: Target keywords for keyword fit check.
-            platform: Target platform name (default "xiaohongshu").
-            kb_chunks: KB chunks for grounding verification.
-            style_score: Pre-computed style consistency score (0-1).
-            ai_score: Pre-computed AI-ness score (0-1, lower is better).
+            dimension_scores: dict mapping dimension name to its result dict.
+                Each result dict must have at least a "score" key and may
+                include "sub_scores", "suggestions", etc.
 
         Returns:
-            The AuditReport serialized as a dict.
+            A dict with:
+                - overall_score: float weighted composite
+                - overall_status: "pass" | "review" | "fail"
+                - scores: dict of per-dimension scores
+                - sub_scores: dict of per-dimension sub_scores
+                - suggestions: combined improvement suggestions (max 10)
+                - below_min_dimension: list of dimensions below min threshold
         """
-        content = content or ""
+        scores: dict[str, float] = {
+            dim: data["score"] for dim, data in dimension_scores.items()
+        }
+        overall_score = compute_weighted_score(scores, self.weights)
 
-        report = AuditReport(content_id="audit-session")
+        below_min = [
+            dim
+            for dim, score in scores.items()
+            if score < self.min_dimension_score
+        ]
 
-        # Dimension 1: Grounding
-        grounding_result = check_grounding(
-            content, kb_chunks or []
-        )
-        report.add_dimension("grounding", grounding_result)
+        if overall_score >= self.thresholds.get("pass", 0.7) and not below_min:
+            overall_status = "pass"
+        elif overall_score >= self.thresholds.get("review", 0.4):
+            overall_status = "review"
+        else:
+            overall_status = "fail"
 
-        # Dimension 2: Keyword fit
-        keyword_result = check_keyword_fit(content, keywords)
-        report.add_dimension("keyword_fit", keyword_result)
+        suggestions: list[str] = []
+        for dim, data in dimension_scores.items():
+            suggestions.extend(data.get("suggestions", []))
 
-        # Dimension 3: Structure
-        structure_result = check_structure(content)
-        report.add_dimension("structure", structure_result)
+        return {
+            "overall_score": overall_score,
+            "overall_status": overall_status,
+            "scores": scores,
+            "sub_scores": {
+                dim: data.get("sub_scores", {})
+                for dim, data in dimension_scores.items()
+            },
+            "suggestions": suggestions[:10],
+            "below_min_dimension": below_min,
+        }
 
-        # Dimension 4: Platform rules
-        platform_result = check_platform_rules(content, platform)
-        report.add_dimension("platform_rules", platform_result)
 
-        # Dimension 5: Style consistency
-        style_actual = style_score if style_score is not None else 1.0
-        report.add_dimension(
-            "style_consistency",
-            {"score": style_actual, "status": "pass" if style_actual >= 0.5 else "review"},
-        )
+def check_gate(
+    scores: dict[str, float],
+    thresholds: dict[str, float] | None = None,
+    fail_fast: bool = False,
+) -> dict[str, Any]:
+    """Legacy gate check. Use AuditGate for new code."""
+    thresholds = thresholds or {"pass": 0.7, "review": 0.4}
+    pass_threshold = thresholds.get("pass", 0.7)
+    review_threshold = thresholds.get("review", 0.4)
 
-        # Dimension 6: AI score
-        ai_actual = ai_score if ai_score is not None else score_ai_ness(content)
-        # Invert: low AI-ness is good, so we report as (1 - ai_actual)
-        # But we store the raw score for transparency
-        report.add_dimension(
-            "ai_score",
-            {"score": ai_actual, "status": "pass" if ai_actual <= 0.35 else "review"},
-        )
+    overall = sum(scores.values()) / max(len(scores), 1)
 
-        return report.to_dict()
+    if overall >= pass_threshold:
+        status = "pass"
+    elif overall >= review_threshold:
+        status = "review"
+    else:
+        status = "fail"
+
+    return {
+        "overall_score": overall,
+        "overall_status": status,
+        "scores": scores,
+        "sub_scores": {},
+        "suggestions": [],
+        "below_min_dimension": [],
+    }

@@ -1,81 +1,77 @@
 from __future__ import annotations
 
 
-def check_keyword_fit(
-    content: str,
-    keywords: list[str],
-    primary_keywords: list[str] | None = None,
-) -> dict:
-    """Check keyword presence in content.
+# Default banned and sensitive word lists
+BANNED_WORDS: list[str] = [
+    "总的来说", "综上所述", "总而言之", "首先", "其次", "最后",
+    "值得注意的是", "需要指出的是", "不可否认", "毋庸置疑",
+]
 
-    Verifies that primary keywords appear in the title (first line), body,
-    and the first 200 characters of the content.
+SENSITIVE_WORDS: list[str] = [
+    "绝对", "一定", "必须", "最", "第一", "唯一",
+    "百分之百", "永远", "完全", "所有",
+]
+
+
+def check_keyword_fit(content: str, config: dict | None = None) -> dict:
+    """Check content for keyword compliance with sub-dimension scores.
+
+    The function checks against built-in banned and sensitive word lists,
+    optionally overridden by config.
 
     Args:
         content: The text to check.
-        keywords: Full list of keywords.
-        primary_keywords: Subset of critical keywords. If None, all keywords
-            are treated as primary.
+        config: Optional dict with keys:
+            - banned_words: list[str] override
+            - sensitive_words: list[str] override
 
     Returns:
         A dict with:
-            - score: float (0.0-1.0)
-            - status: "pass" | "review" | "fail"
-            - primary_keywords: list[str]
-            - keyword_in_title: bool
-            - keyword_in_body: bool
-            - checks: dict per-keyword detail
+            - score: float (0.0-1.0) composite score
+            - sub_scores: dict of sub-dimension scores
+            - details: dict with banned_found and sensitive_found lists
+            - suggestions: list of improvement suggestions
     """
-    if not keywords:
-        return {
-            "score": 1.0,
-            "status": "pass",
-            "primary_keywords": [],
-            "keyword_in_title": False,
-            "keyword_in_body": False,
-            "checks": {},
-        }
+    banned_words = (
+        config.get("banned_words", BANNED_WORDS) if config else BANNED_WORDS
+    )
+    sensitive_words = (
+        config.get("sensitive_words", SENSITIVE_WORDS) if config else SENSITIVE_WORDS
+    )
 
-    primary = primary_keywords if primary_keywords else keywords
-    lines = content.strip().split("\n")
-    title = lines[0] if lines else ""
-    body = "\n".join(lines[1:]) if len(lines) > 1 else ""
-    first_200 = content[:200]
+    content_lower = content.lower()
 
-    checks: dict[str, dict] = {}
-    hits = 0
+    # Sub-dimension: banned word ratio
+    banned_found = [w for w in banned_words if w.lower() in content_lower]
+    banned_score = max(0.0, 1.0 - len(banned_found) / max(len(banned_words), 1))
 
-    for kw in primary:
-        in_title = kw in title
-        in_body = kw in body
-        in_first_200 = kw in first_200
-        found = in_title or in_body
-        if found:
-            hits += 1
-        checks[kw] = {
-            "in_title": in_title,
-            "in_body": in_body,
-            "in_first_200": in_first_200,
-            "found": found,
-        }
+    # Sub-dimension: sensitive word ratio
+    sensitive_found = [
+        w for w in sensitive_words if w.lower() in content_lower
+    ]
+    sensitive_score = (
+        max(0.0, 1.0 - len(sensitive_found) / max(len(sensitive_words), 1))
+        if sensitive_words
+        else 1.0
+    )
 
-    score = hits / max(len(primary), 1)
+    score = (banned_score + sensitive_score) / 2.0
 
-    keyword_in_title = any(checks[kw]["in_title"] for kw in primary)
-    keyword_in_body = any(checks[kw]["in_body"] for kw in primary)
-
-    if score >= 0.8:
-        status = "pass"
-    elif score >= 0.3:
-        status = "review"
-    else:
-        status = "fail"
+    suggestions: list[str] = []
+    if banned_found:
+        suggestions.append(f"禁用词使用: {', '.join(banned_found[:3])}")
+    if sensitive_found:
+        suggestions.append(f"敏感词使用: {', '.join(sensitive_found[:3])}")
 
     return {
         "score": score,
-        "status": status,
-        "primary_keywords": primary,
-        "keyword_in_title": keyword_in_title,
-        "keyword_in_body": keyword_in_body,
-        "checks": checks,
+        "sub_scores": {
+            "banned_word_ratio": banned_score,
+            "sensitive_word_ratio": sensitive_score,
+        },
+        "details": {
+            "banned_found": banned_found,
+            "sensitive_found": sensitive_found,
+        },
+        "suggestions": suggestions,
     }

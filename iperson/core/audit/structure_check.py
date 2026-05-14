@@ -1,79 +1,73 @@
 from __future__ import annotations
 
-import re
 
+def check_structure(content: str, config: dict | None = None) -> dict:
+    """Analyze document structure quality with sub-dimension scores.
 
-def check_structure(content: str) -> dict:
-    """Analyze document structure quality.
-
-    Checks for the presence of markdown headings (H1, H2, H3), lists,
-    and evaluates paragraph count adequacy.
-
-    Scoring weights:
-        - H1: 0.3
-        - H2: 0.25
-        - H3: 0.15
-        - List: 0.1
-        - Proper paragraph count (>= 2): 0.2
+    Evaluates heading hierarchy, paragraph length distribution, and logical
+    flow via transition words.
 
     Args:
         content: The text to analyze.
+        config: Optional dict (reserved for future use).
 
     Returns:
         A dict with:
-            - score: float (0.0-1.0)
-            - status: "pass" | "review" | "fail"
-            - has_h1: bool
-            - has_h2: bool
-            - has_h3: bool
-            - has_list: bool
-            - paragraph_count: int
+            - score: float (0.0-1.0) composite score
+            - sub_scores: dict of sub-dimension scores
+                - heading_hierarchy: float
+                - paragraph_length_distribution: float
+                - logical_flow_score: float
+            - suggestions: list of improvement suggestions
     """
-    lines = content.strip().split("\n")
+    lines = content.split("\n")
+    headings = [l for l in lines if l.strip().startswith("#")]
+    has_h1 = any(l.strip().startswith("# ") for l in lines)
 
-    has_h1 = any(line.startswith("# ") for line in lines if line.strip())
-    has_h2 = any(line.startswith("## ") for line in lines if line.strip())
-    has_h3 = any(line.startswith("### ") for line in lines if line.strip())
+    # Sub-dimension: heading hierarchy
+    heading_score = 1.0
+    if headings and not has_h1:
+        heading_score -= 0.3
+    if not headings:
+        heading_score = 0.3
+    heading_score = max(0.0, heading_score)
 
-    # Detect lists: numbered (1. ) or bullet (-, *)
-    has_list = any(
-        bool(re.match(r"^\s*(?:\d+\.\s|[-*]\s)", line))
-        for line in lines
-        if line.strip()
-    )
-
-    # Count non-empty paragraphs (separated by blank lines)
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", content) if p.strip()]
-    paragraph_count = len(paragraphs)
-
-    # Calculate score
-    score = 0.0
-    if has_h1:
-        score += 0.3
-    if has_h2:
-        score += 0.25
-    if has_h3:
-        score += 0.15
-    if has_list:
-        score += 0.1
-    if paragraph_count >= 2:
-        score += 0.2
-
-    score = min(score, 1.0)
-
-    if score >= 0.7:
-        status = "pass"
-    elif score >= 0.3:
-        status = "review"
+    # Sub-dimension: paragraph length distribution
+    paragraphs = [
+        l for l in lines if l.strip() and not l.strip().startswith("#")
+    ]
+    if paragraphs:
+        lengths = [len(p) for p in paragraphs]
+        long_ratio = sum(1 for l in lengths if l > 500) / len(lengths)
+        short_ratio = sum(1 for l in lengths if l < 10) / len(lengths)
+        para_score = max(0.0, 1.0 - long_ratio - short_ratio * 0.5)
     else:
-        status = "fail"
+        para_score = 0.5
+
+    # Sub-dimension: logical flow via transition words
+    transition_words = [
+        "因为", "所以", "但是", "然而", "而且", "此外",
+        "如果", "虽然", "因此", "例如",
+    ]
+    transition_count = sum(1 for w in transition_words if w in content)
+    flow_score = min(1.0, transition_count / 5.0)
+
+    score = (heading_score + para_score + flow_score) / 3.0
+
+    suggestions: list[str] = []
+    if not headings:
+        suggestions.append("文档缺少标题结构")
+    elif not has_h1:
+        suggestions.append("缺少一级标题")
+    if flow_score < 0.5:
+        suggestions.append("逻辑衔接词使用较少，段落间连贯性可加强")
 
     return {
         "score": score,
-        "status": status,
-        "has_h1": has_h1,
-        "has_h2": has_h2,
-        "has_h3": has_h3,
-        "has_list": has_list,
-        "paragraph_count": paragraph_count,
+        "sub_scores": {
+            "heading_hierarchy": heading_score,
+            "paragraph_length_distribution": para_score,
+            "logical_flow_score": flow_score,
+        },
+        "suggestions": suggestions,
     }

@@ -63,3 +63,51 @@ class AuditReport:
             "dimensions": dict(self.dimensions),
             "overall_status": self.overall_status,
         }
+
+
+def format_audit_report(gate_result: dict[str, Any]) -> str:
+    """Format gate evaluation result as a human-readable string.
+
+    Args:
+        gate_result: The result dict from AuditGate.evaluate().
+
+    Returns:
+        A formatted multi-line string report.
+    """
+    lines = [
+        f"审核报告 - {datetime.now(UTC).isoformat()}",
+        f"综合评分: {gate_result.get('overall_score', 0.0):.2f}",
+        f"审核结果: {gate_result.get('overall_status', 'unknown')}",
+        "",
+    ]
+    scores = gate_result.get("scores", {})
+    lines.append("维度评分:")
+    for dim, score in sorted(scores.items()):
+        lines.append(f"  {dim}: {score:.2f}")
+
+    suggestions = gate_result.get("suggestions", [])
+    if suggestions:
+        lines.append("")
+        lines.append("改进建议:")
+        for s in suggestions:
+            lines.append(f"  - {s}")
+    return "\n".join(lines)
+
+
+def build_audit_json(gate_result: dict[str, Any]) -> dict[str, Any]:
+    """Build a JSON-serializable audit result dict.
+
+    Args:
+        gate_result: The result dict from AuditGate.evaluate().
+
+    Returns:
+        A dict suitable for JSON serialization.
+    """
+    return {
+        "overall_score": gate_result.get("overall_score", 0.0),
+        "overall_status": gate_result.get("overall_status", "unknown"),
+        "scores": gate_result.get("scores", {}),
+        "sub_scores": gate_result.get("sub_scores", {}),
+        "suggestions": gate_result.get("suggestions", []),
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
