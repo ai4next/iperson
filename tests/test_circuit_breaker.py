@@ -13,6 +13,15 @@ from iperson.pipeline.circuit_breaker import (
 
 
 class TestCircuitBreaker:
+    def test_can_proceed_returns_true_when_closed(self) -> None:
+        cb = CircuitBreaker()
+        assert cb.can_proceed() is True
+
+    def test_can_proceed_returns_false_when_open(self) -> None:
+        cb = CircuitBreaker(CircuitBreakerConfig(failure_threshold=1))
+        cb.record_failure()
+        assert cb.can_proceed() is False
+
     def test_initial_state_is_closed(self) -> None:
         cb = CircuitBreaker()
         assert cb.state == CircuitBreakerState.CLOSED

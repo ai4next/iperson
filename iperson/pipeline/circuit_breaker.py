@@ -41,6 +41,14 @@ class CircuitBreaker:
             self.state = CircuitBreakerState.CLOSED
         self.failure_count = 0
 
+    def can_proceed(self) -> bool:
+        """Check if the circuit allows requests without raising."""
+        try:
+            self.check()
+            return True
+        except CircuitBreakerError:
+            return False
+
     def check(self) -> None:
         """Check if the circuit is open. Transitions OPEN->HALF_OPEN if timeout passed."""
         if self.state == CircuitBreakerState.OPEN:
