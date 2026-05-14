@@ -1,0 +1,11 @@
+name: "热点追稿"
+description: "快速追热点，仅检查关键审核维度"
+stages:
+  - plugin: research.kb_retrieve
+  - plugin: generation.article
+  - plugin: quality.humanizer
+  - plugin: quality.audit
+    config:
+      dimensions: [keyword_fit, platform_rules, ai_score]
+      on_fail: flag
+  - plugin: publish.multiplatform

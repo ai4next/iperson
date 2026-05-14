@@ -1,1 +1,0 @@
-"""iPerson — Universal AI-powered Personal IP Operation Platform."""

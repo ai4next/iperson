@@ -1,0 +1,17 @@
+name: "极速模式"
+description: "个人创作者日更，5分钟出稿。KB检索 → 生成 → Humanizer → 审核 → 发布"
+stages:
+  - plugin: research.kb_retrieve
+    config:
+      top_k: 5
+  - plugin: generation.article
+  - plugin: quality.humanizer
+    config:
+      min_score: 0.35
+      max_iterations: 2
+  - plugin: quality.audit
+    config:
+      on_fail: regenerate
+  - plugin: publish.multiplatform
+    config:
+      platforms: [xiaohongshu]

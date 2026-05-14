@@ -1,0 +1,12 @@
+name: "完整模式"
+description: "深度内容，从KB检索到多平台发布"
+stages:
+  - plugin: research.kb_retrieve
+    config:
+      top_k: 10
+  - plugin: generation.article
+  - plugin: quality.humanizer
+  - plugin: quality.audit
+  - plugin: publish.multiplatform
+    config:
+      platforms: [xiaohongshu, wechat, zhihu]

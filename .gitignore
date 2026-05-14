@@ -1,15 +1,35 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 .venv/
 venv/
+dist/
+build/
+*.egg
+*.whl
+*.so
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Test & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
 # Environment
 .env
@@ -21,7 +41,9 @@ backend/.env
 
 # Runtime
 output/
+data/
 *.log
+tmp/
 
 # OS
 .DS_Store
@@ -29,3 +51,6 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Docs
+docs/
