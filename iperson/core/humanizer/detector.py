@@ -1,7 +1,105 @@
 from __future__ import annotations
 
 import math
+import re
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass
+class AIPatternMatch:
+    category: str
+    pattern_name: str
+    matched_text: str
+    position: tuple[int, int]  # (start, end)
+    confidence: float
+
+
+PATTERN_WEIGHTS: dict[str, float] = {
+    "template_openings": 0.25,
+    "template_closings": 0.20,
+    "over修饰": 0.20,
+    "verbose_transitions": 0.15,
+    "mechanical_listing": 0.20,
+}
+
+PATTERNS: list[dict[str, Any]] = [
+    {"category": "template_openings", "weight": 0.25, "patterns": [
+        r"在这个[一-鿿]+的[时\b]",
+        r"随着[互联网\w]+的[发展普及]",
+        r"在当今[社会时代]",
+        r"近年来[，,]\s*",
+        r"当[我们你]谈论",
+    ]},
+    {"category": "template_closings", "weight": 0.20, "patterns": [
+        r"总[的之]来说",
+        r"让我们[一起共同]",
+        r"希望对[你大家]",
+        r"[如果只要]你[觉得认为]",
+        r"[欢迎期待]你的[留言反馈分享]",
+    ]},
+    {"category": "over修饰", "weight": 0.20, "patterns": [
+        r"无疑[，,]",
+        r"至关[重要重]",
+        r"极其[重要重]",
+        r"非常[重要关键]",
+        r"不可[忽视或缺]",
+    ]},
+    {"category": "verbose_transitions", "weight": 0.15, "patterns": [
+        r"[值得需要]注意[的]?是",
+        r"[值得需要]一[提说]的是",
+        r"需要[特别额外]?指出",
+        r"不得不[说提]",
+        r"[相对相比]而言",
+    ]},
+    {"category": "mechanical_listing", "weight": 0.20, "patterns": [
+        r"首先[，,]\s*",
+        r"其[次二][，,]\s*",
+        r"再[次者][，,]\s*",
+        r"最[后终][，,]\s*",
+        r"第[一二三四五六七八九十][，,]\s*",
+    ]},
+]
+
+
+class AIDetector:
+    """Detects AI-generated text patterns in content."""
+
+    def __init__(self) -> None:
+        self._compiled: list[dict[str, Any]] = []
+        for cat in PATTERNS:
+            compiled_patterns = [re.compile(p) for p in cat["patterns"]]
+            self._compiled.append({
+                "category": cat["category"],
+                "weight": cat["weight"],
+                "patterns": compiled_patterns,
+            })
+
+    def detect(self, content: str) -> list[AIPatternMatch]:
+        """Scan content and return all AI pattern matches with details."""
+        matches: list[AIPatternMatch] = []
+        for cat in self._compiled:
+            for pattern in cat["patterns"]:
+                for m in pattern.finditer(content):
+                    matches.append(AIPatternMatch(
+                        category=cat["category"],
+                        pattern_name=cat["category"],
+                        matched_text=m.group(),
+                        position=(m.start(), m.end()),
+                        confidence=0.8,
+                    ))
+        return matches
+
+    def detect_by_category(self, content: str) -> dict[str, list[AIPatternMatch]]:
+        """Group matches by category."""
+        all_matches = self.detect(content)
+        result: dict[str, list[AIPatternMatch]] = {}
+        for m in all_matches:
+            result.setdefault(m.category, []).append(m)
+        return result
+
+
+# Backward-compatible exports
 
 AI_PHRASES: list[str] = [
     "值得注意的是",
@@ -23,22 +121,7 @@ AI_PHRASES: list[str] = [
 
 
 def detect_ai_patterns(text: str) -> list[dict[str, Any]]:
-    """Detect AI writing patterns in the given text.
-
-    Checks for:
-    - AI phrase presence
-    - Sequential structure markers (首先, 其次, 最后, 第一, 第二, 第三)
-    - Paragraph uniformity (standard deviation of paragraph lengths)
-
-    Args:
-        text: The input text to analyze.
-
-    Returns:
-        A list of detection results, each with keys:
-        - "type": "ai_phrase" | "ai_structure" | "uniform_structure"
-        - "phrase" or "pattern" or "detail": the specific item detected
-        - "severity": "low" | "medium"
-    """
+    """Detect AI writing patterns in the given text. (legacy API)"""
     if not text:
         return []
 
@@ -47,9 +130,7 @@ def detect_ai_patterns(text: str) -> list[dict[str, Any]]:
     # Signal 1: AI phrase detection
     for phrase in AI_PHRASES:
         if phrase in text:
-            # Check if it's the exact phrase or a variant
             if "..." in phrase:
-                # For patterns like "不仅...而且", check both parts
                 parts = phrase.split("...")
                 if len(parts) == 2 and parts[0] in text and parts[1] in text:
                     findings.append({
@@ -83,7 +164,6 @@ def detect_ai_patterns(text: str) -> list[dict[str, Any]]:
         if mean_length > 0:
             variance = sum((p - mean_length) ** 2 for p in lengths) / len(lengths)
             std_dev = math.sqrt(variance)
-            # If std dev is less than 30% of the mean, paragraphs are very uniform
             if std_dev / mean_length < 0.3:
                 findings.append({
                     "type": "uniform_structure",

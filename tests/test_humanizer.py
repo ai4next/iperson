@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from iperson.core.humanizer import humanize
-from iperson.core.humanizer.detector import detect_ai_patterns
+from iperson.core.humanizer.detector import AIDetector, AIPatternMatch, detect_ai_patterns
 from iperson.core.humanizer.scorer import score_ai_ness
 from iperson.core.humanizer.transformer import replace_ai_phrases
 
@@ -170,3 +170,54 @@ class TestHumanizer:
         assert len(result["changes"]) > 0
         # Score should be 0 since min_score=0 forces all iterations
         assert result["score"] >= 0.0
+
+
+class TestAIDetectorExtension:
+    def test_detect_template_openings(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("在这个快速发展的时代，我们需要改变。")
+        cats = [m.category for m in matches]
+        assert "template_openings" in cats
+
+    def test_detect_template_closings(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("总的来说，这是一个好产品。")
+        cats = [m.category for m in matches]
+        assert "template_closings" in cats
+
+    def test_detect_over修饰(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("这个问题无疑是非常重要的。")
+        cats = [m.category for m in matches]
+        assert "over修饰" in cats
+
+    def test_detect_verbose_transitions(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("值得注意的是，这个现象很普遍。")
+        cats = [m.category for m in matches]
+        assert "verbose_transitions" in cats
+
+    def test_detect_mechanical_listing(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("首先，我们要分析问题。其次，找出解决方案。")
+        cats = [m.category for m in matches]
+        assert "mechanical_listing" in cats
+
+    def test_detect_by_category_groups_correctly(self) -> None:
+        detector = AIDetector()
+        grouped = detector.detect_by_category("总的来说，首先，我们要重视这个问题。")
+        assert "template_closings" in grouped
+        assert "mechanical_listing" in grouped
+
+    def test_clean_text_returns_no_matches(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("今天天气真好，去公园散步吧。")
+        assert len(matches) == 0
+
+    def test_detect_returns_position(self) -> None:
+        detector = AIDetector()
+        matches = detector.detect("总的来说，这个方案不错。")
+        assert len(matches) >= 1
+        m = matches[0]
+        assert isinstance(m.position[0], int)
+        assert m.position[1] > m.position[0]
