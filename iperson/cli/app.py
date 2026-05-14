@@ -7,6 +7,8 @@ from iperson.cli.audit_cmd import audit_group
 from iperson.cli.kb_cmd import kb_group
 from iperson.cli.persona_cmd import persona_group
 from iperson.cli.publish_cmd import publish_group
+from iperson.cli.topics_cmd import topics_group
+from iperson.cli.tuning_cmd import tuning_group
 
 app = typer.Typer(
     name="iperson",
@@ -19,6 +21,8 @@ app.add_typer(publish_group, name="publish")
 app.add_typer(kb_group, name="kb")
 app.add_typer(audit_group, name="audit")
 app.add_typer(persona_group, name="persona")
+app.add_typer(topics_group, name="topics")
+app.add_typer(tuning_group, name="tuning")
 
 
 @app.callback(invoke_without_command=True)
