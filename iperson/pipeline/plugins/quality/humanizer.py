@@ -12,7 +12,7 @@ from iperson.pipeline.plugin import StagePlugin
 class HumanizerPlugin(StagePlugin):
     plugin_id = "quality.humanizer"
 
-    async def execute(self, ctx: PipelineContext, config: dict[str, Any]) -> PipelineContext:
+    async def execute(self, ctx: PipelineContext, config: dict[str, Any] | None = None) -> PipelineContext:
         if not ctx.generated_content:
             return ctx
 
@@ -25,7 +25,7 @@ class HumanizerPlugin(StagePlugin):
 
         result = await transformer.transform(
             content=ctx.generated_content,
-            config=config,
+            config=config or {},
             llm_client=llm_client,
             persona_engine=persona_engine,
         )
