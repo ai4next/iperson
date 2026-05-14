@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typer
 
+from iperson.cli.agent_cmd import agent_group
 from iperson.cli.analytics_cmd import analytics_group
 from iperson.cli.audit_cmd import audit_group
 from iperson.cli.kb_cmd import kb_group
@@ -16,6 +17,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+app.add_typer(agent_group, name="agent")
 app.add_typer(analytics_group, name="analytics")
 app.add_typer(publish_group, name="publish")
 app.add_typer(kb_group, name="kb")
