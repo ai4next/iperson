@@ -78,6 +78,12 @@ iperson audit report ./output/xxx/
 | `iperson kb search` | 混合检索知识库 |
 | `iperson persona create` | 创建/编辑创作者人设 |
 | `iperson audit report` | 查看质量审核报告 |
+| `iperson analytics collect` | 记录内容表现数据 |
+| `iperson analytics report` | 查看内容表现分析 |
+| `iperson topics suggest` | 基于 KB 和分析数据推荐选题 |
+| `iperson agent run` | 运行单次自主内容生成 |
+| `iperson agent auto` | 自动选题并生成内容 |
+| `iperson tuning analyze` | 分析人设风格并给出调优建议 |
 | `iperson --version` | 查看版本号 |
 
 ### `iperson publish run` 完整选项
@@ -276,9 +282,9 @@ pytest tests/test_audit_gate.py -v
 ## 路线图
 
 - **Phase 1** (已完成): CLI MVP + 插件化管线 + 知识库 RAG + 质量审核 + 人味化
-- **Phase 2** (当前): Pipeline 弹性（CircuitBreaker + 错误恢复）+ Humanizer 质量提升 + 审核精准度优化 + Gemini 支持 + 管线加固
-- **Phase 3** (规划): 分析引擎 + 反馈闭环 + 更多平台适配（抖音/微博/知乎 API）
-- **Phase 4** (规划): 自动选题 + 数字分身 Agent + 风格微调
+- **Phase 2** (已完成): Pipeline 弹性（CircuitBreaker + 错误恢复）+ Humanizer 质量提升 + 审核精准度优化 + Gemini 支持 + 管线加固
+- **Phase 3** (已完成): 分析引擎（内容表现追踪）+ 平台 API 适配器（知乎/微博/抖音）+ 数据驱动优化
+- **Phase 4** (已完成): 自动选题（KB + 分析数据）+ 数字分身 Agent（自主内容生成）+ 风格微调（AI模式分析 + 性能反馈调优）
 
 ## 开发
 
