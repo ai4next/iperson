@@ -314,12 +314,12 @@ class TestOrchestrator:
 
         # Stage one should have run
         assert result.data.get("stage_one_done") is True
-        # Stage two should also have run (error doesn't stop pipeline)
-        assert result.data.get("stage_two_done") is True
+        # Stage two should NOT have run (default on_error=abort stops pipeline)
+        assert result.data.get("stage_two_done") is not True
         # error should be recorded
         assert len(result.errors) >= 1
-        assert result.errors[0]["stage"] == "test.failing"
-        assert "Intentional failure" in result.errors[0]["error"]
+        assert result.errors[0].stage == "test.failing"
+        assert "Intentional failure" in result.errors[0].message
         assert result.status == "completed_with_errors"
 
     @pytest.mark.asyncio
@@ -418,8 +418,8 @@ stages:
 
         assert len(result.errors) >= 1
         # With max_retries=1, we should have 1 retry attempt + original = 2 total attempts
-        assert result.errors[-1]["attempts"] == 2
-        assert result.errors[-1]["stage"] == "test.failing"
+        assert result.errors[-1].attempts == 2
+        assert result.errors[-1].stage == "test.failing"
         assert result.status == "completed_with_errors"
 
     @pytest.mark.asyncio
@@ -465,3 +465,77 @@ def test_pipeline_error_defaults() -> None:
 def test_pipeline_error_recoverable() -> None:
     err = PipelineError(error_code="TEST", stage="test", message="recoverable", recoverable=True)
     assert err.recoverable is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_unknown_plugin_pre_validation() -> None:
+    """Pre-validation should stop pipeline immediately for unknown plugin."""
+    registry = PluginRegistry()
+    orchestrator = PipelineOrchestrator(registry)
+    ctx = PipelineContext(topic="test")
+    recipe = {"name": "test", "stages": [{"plugin": "nonexistent.plugin"}]}
+    result = await orchestrator.run(ctx, recipe)
+    assert len(result.errors) == 1
+    assert result.errors[0].error_code == "PLUGIN_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_on_error_skip() -> None:
+    """on_error=skip should continue past a failed stage."""
+    registry = PluginRegistry()
+
+    class FailingPlugin(StagePlugin):
+        plugin_id = "test.fail"
+
+        async def execute(self, ctx: PipelineContext, config: dict) -> PipelineContext:
+            raise RuntimeError("stage failed")
+
+    registry.register(FailingPlugin)
+
+    class PassingPlugin(StagePlugin):
+        plugin_id = "test.pass"
+
+        async def execute(self, ctx: PipelineContext, config: dict) -> PipelineContext:
+            return ctx
+
+    registry.register(PassingPlugin)
+
+    orchestrator = PipelineOrchestrator(registry)
+    ctx = PipelineContext(topic="test")
+    recipe = {
+        "name": "test",
+        "stages": [
+            {"plugin": "test.fail", "config": {"on_error": "skip"}},
+            {"plugin": "test.pass"},
+        ],
+    }
+    result = await orchestrator.run(ctx, recipe)
+    assert len(result.errors) == 1
+    assert result.errors[0].stage == "test.fail"
+    assert result.status == "completed_with_errors"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_on_error_abort() -> None:
+    """on_error=abort should stop the pipeline on failure."""
+    registry = PluginRegistry()
+
+    class FailStage(StagePlugin):
+        plugin_id = "test.abort_fail"
+
+        async def execute(self, ctx: PipelineContext, config: dict) -> PipelineContext:
+            raise RuntimeError("abort")
+
+    registry.register(FailStage)
+
+    orchestrator = PipelineOrchestrator(registry)
+    ctx = PipelineContext(topic="test")
+    recipe = {
+        "name": "test",
+        "stages": [
+            {"plugin": "test.abort_fail", "config": {"on_error": "abort"}},
+        ],
+    }
+    result = await orchestrator.run(ctx, recipe)
+    assert len(result.errors) == 1
+    assert result.errors[0].stage == "test.abort_fail"
