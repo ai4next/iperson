@@ -32,8 +32,11 @@ openai = [
 anthropic = [
     "anthropic>=0.30",
 ]
+gemini = [
+    "langchain-google-genai>=2.0",
+]
 all = [
-    "iperson[openai,anthropic,dev]",
+    "iperson[openai,anthropic,gemini,dev]",
 ]
 
 [project.scripts]

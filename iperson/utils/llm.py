@@ -29,6 +29,10 @@ def _cached_llm(
     url = base_url or None
     if provider == "anthropic":
         return ChatAnthropic(model=model, temperature=temperature, api_key=key, base_url=url, thinking={"type": "disabled"})
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature, api_key=key)
     return ChatOpenAI(model=model, temperature=temperature, api_key=key, base_url=url)
 
 

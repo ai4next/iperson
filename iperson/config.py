@@ -100,6 +100,9 @@ class StageProvider(BaseModel):
     temperature: float = 0.7
     api_key: str | None = None
     base_url: str | None = None
+    max_retries: int = 3
+    timeout: int = 60
+    max_tokens: int | None = None
 
 
 def _merge_llm_api_key(provider: dict, llm_cfg: dict) -> dict:
