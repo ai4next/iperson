@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
 from iperson.core.humanizer import humanize
 from iperson.core.humanizer.detector import AIDetector, AIPatternMatch, detect_ai_patterns
-from iperson.core.humanizer.scorer import score_ai_ness
-from iperson.core.humanizer.transformer import replace_ai_phrases
+from iperson.core.humanizer.scorer import score_ai_ness, AIScorer
+from iperson.core.humanizer.transformer import replace_ai_phrases, HumanizerTransformer
 
 AI_TEXT = (
     "值得注意的是，RAG技术具有显著的性能优势。总的来说，"
@@ -221,3 +223,65 @@ class TestAIDetectorExtension:
         m = matches[0]
         assert isinstance(m.position[0], int)
         assert m.position[1] > m.position[0]
+
+
+class TestAIScorer:
+    def test_empty_content_returns_zero(self) -> None:
+        scorer = AIScorer()
+        assert scorer.score("") == 0.0
+
+    def test_clean_content_returns_zero(self) -> None:
+        scorer = AIScorer()
+        assert scorer.score("今天天气真好，去公园散步吧。") == 0.0
+
+    def test_ai_content_scores_above_zero(self) -> None:
+        scorer = AIScorer()
+        score = scorer.score("总的来说，首先我们要注意这个问题。无疑这是非常重要的。")
+        assert score > 0.0
+
+    def test_classify_low(self) -> None:
+        scorer = AIScorer()
+        assert scorer.classify(0.1) == "low"
+
+    def test_classify_moderate(self) -> None:
+        scorer = AIScorer()
+        assert scorer.classify(0.35) == "moderate"
+
+    def test_classify_high(self) -> None:
+        scorer = AIScorer()
+        assert scorer.classify(0.75) == "high"
+
+    def test_should_rewrite_true(self) -> None:
+        scorer = AIScorer()
+        assert scorer.should_rewrite(0.5, min_score=0.35)
+
+    def test_should_rewrite_false(self) -> None:
+        scorer = AIScorer()
+        assert not scorer.should_rewrite(0.2, min_score=0.35)
+
+    def test_more_patterns_higher_score(self) -> None:
+        scorer = AIScorer()
+        low_ai = "今天天气真好。"
+        high_ai = "总的来说，首先我们要重视这个问题。无疑这是非常关键的，不可忽视。其次，值得注意的是..."
+        assert scorer.score(high_ai) > scorer.score(low_ai)
+
+
+@pytest.mark.asyncio
+async def test_transformer_no_llm_fallback() -> None:
+    transformer = HumanizerTransformer()
+    result = await transformer.transform(
+        "总的来说，首先我们要注意这个问题。",
+        config={"min_score": 0.0, "max_iterations": 1, "focus_regions": True},
+        llm_client=None,
+    )
+    assert len(result) < len("总的来说，首先我们要注意这个问题。") or "总的来说" not in result
+
+
+def test_build_region_markers() -> None:
+    detector = AIDetector()
+    matches = detector.detect("总的来说，这个方案不错。")
+    transformer = HumanizerTransformer(detector)
+    markers = transformer._build_region_markers(matches)
+    assert len(markers) >= 1
+    for m in markers:
+        assert "start" in m and "end" in m and "category" in m

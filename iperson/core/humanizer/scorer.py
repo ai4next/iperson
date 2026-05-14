@@ -2,16 +2,56 @@ from __future__ import annotations
 
 import math
 
-from iperson.core.humanizer.detector import AI_PHRASES
+from iperson.core.humanizer.detector import AIDetector, AI_PHRASES, PATTERN_WEIGHTS
+
+
+CALIBRATION_FACTOR = 1.2
+
+
+class AIScorer:
+    """Scores content for AI-likeness using weighted pattern analysis."""
+
+    def __init__(self, detector: AIDetector | None = None) -> None:
+        self.detector = detector or AIDetector()
+
+    def score(self, content: str) -> float:
+        """Compute weighted AI score. Returns 0.0 (natural) to 1.0 (very AI-like)."""
+        grouped = self.detector.detect_by_category(content)
+        if not grouped:
+            return 0.0
+
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for category, matches in grouped.items():
+            weight = PATTERN_WEIGHTS.get(category, 0.15)
+            category_score = min(1.0, len(matches) * 0.4)
+            weighted_sum += category_score * weight
+            total_weight += weight
+
+        if total_weight == 0:
+            return 0.0
+
+        raw_score = weighted_sum / total_weight
+        return min(1.0, raw_score * CALIBRATION_FACTOR)
+
+    def classify(self, score: float) -> str:
+        if score <= 0.25:
+            return "low"
+        if score <= 0.50:
+            return "moderate"
+        return "high"
+
+    def should_rewrite(self, score: float, min_score: float = 0.35) -> bool:
+        return score > min_score
 
 
 def score_ai_ness(text: str) -> float:
-    """Score how AI-like the given text reads.
+    """Score how AI-like the given text reads. (legacy API)
 
     Uses three weighted signals:
-    - Signal 1 (40%): AI phrase density — count of AI_PHRASES hits per ~100 chars
-    - Signal 2 (30%): Paragraph uniformity — penalizes paragraphs with very similar lengths
-    - Signal 3 (30%): Sequential markers — count of 首先/其次/最后/第一/第二/第三
+    - Signal 1 (40%): AI phrase density -- count of AI_PHRASES hits per ~100 chars
+    - Signal 2 (30%): Paragraph uniformity -- penalizes paragraphs with very similar lengths
+    - Signal 3 (30%): Sequential markers -- count of 首先/其次/最后/第一/第二/第三
 
     Args:
         text: The input text to score.
