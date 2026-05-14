@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from iperson.pipeline.context import PipelineContext
+from iperson.pipeline.errors import PipelineError
 from iperson.pipeline.plugin import StagePlugin
 from iperson.pipeline.registry import PluginRegistry
 
@@ -25,6 +26,26 @@ class PipelineOrchestrator:
           4. On failure, respect max_retries config.
         """
         stages: list[dict[str, Any]] = recipe.get("stages", [])
+
+        # Pre-validate all stages
+        for stage_def in stages:
+            plugin_id = stage_def.get("plugin")
+            if not plugin_id:
+                ctx.errors.append(PipelineError(
+                    error_code="INVALID_STAGE",
+                    stage="unknown",
+                    message="Stage missing 'plugin' field",
+                    recoverable=False,
+                ))
+                return ctx
+            if not self.registry.has(plugin_id):
+                ctx.errors.append(PipelineError(
+                    error_code="PLUGIN_NOT_FOUND",
+                    stage=plugin_id,
+                    message=f"Unknown plugin: '{plugin_id}'",
+                    recoverable=True,
+                ))
+                return ctx
 
         for stage_def in stages:
             plugin_id: str = stage_def["plugin"]

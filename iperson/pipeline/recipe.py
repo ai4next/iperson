@@ -8,6 +8,35 @@ import yaml
 from iperson.config import get_data_dir
 
 
+class RecipeValidationError(Exception):
+    """Raised when a recipe is invalid."""
+
+
+_REQUIRED_RECIPE_FIELDS = ["name", "stages"]
+
+
+def validate_recipe(data: dict) -> list[str]:
+    """Validate a recipe data structure. Returns list of error messages."""
+    errors: list[str] = []
+    for field in _REQUIRED_RECIPE_FIELDS:
+        if field not in data:
+            errors.append(f"Missing required field: '{field}'")
+
+    stages = data.get("stages", [])
+    if not isinstance(stages, list):
+        errors.append("'stages' must be a list")
+    elif not stages:
+        errors.append("'stages' list is empty")
+    else:
+        for i, stage in enumerate(stages):
+            if not isinstance(stage, dict):
+                errors.append(f"Stage {i} must be a dict")
+            elif "plugin" not in stage:
+                errors.append(f"Stage {i} missing required 'plugin' field")
+
+    return errors
+
+
 def load_recipe_from_yaml(yaml_str: str) -> dict[str, Any]:
     """Parse a YAML string into a recipe dictionary.
 
@@ -54,7 +83,13 @@ def load_recipe(name: str) -> dict[str, Any]:
             f"Recipe '{name}' not found at {recipe_path}. "
             f"Available recipes: {', '.join(list_recipes())}"
         )
-    return load_recipe_from_file(str(recipe_path))
+    data = load_recipe_from_file(str(recipe_path))
+    errors = validate_recipe(data)
+    if errors:
+        raise RecipeValidationError(
+            f"Recipe '{name}' is invalid: {'; '.join(errors)}"
+        )
+    return data
 
 
 def list_recipes() -> list[str]:

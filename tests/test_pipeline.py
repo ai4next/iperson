@@ -342,14 +342,12 @@ stages:
 
         result = await orchestrator.run(ctx, recipe)
 
-        assert result.data.get("stage_one_done") is True
-        assert result.data.get("stage_two_done") is not True  # Not registered yet
-        # Two errors: one for each unknown plugin
-        assert len(result.errors) == 2
-        assert result.errors[0]["stage"] == "nonexistent.plugin"
-        assert "Unknown plugin" in result.errors[0]["error"]
-        assert result.errors[1]["stage"] == "test.stage_two"
-        assert "Unknown plugin" in result.errors[1]["error"]
+        # Pre-validation returns immediately on first unknown plugin
+        assert result.data.get("stage_one_done") is not True
+        assert len(result.errors) == 1
+        assert result.errors[0].error_code == "PLUGIN_NOT_FOUND"
+        assert result.errors[0].stage == "nonexistent.plugin"
+        assert "Unknown plugin" in result.errors[0].message
 
     @pytest.mark.asyncio
     async def test_orchestrator_retry_success(self) -> None:
