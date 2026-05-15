@@ -22,7 +22,7 @@ from iperson.core.persona.profile import (
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.plugins import register_builtin_plugins
-from iperson.pipeline.pipeline import load_pipeline, load_pipeline_from_yaml
+from iperson.pipeline.pipeline import load_pipeline
 from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
