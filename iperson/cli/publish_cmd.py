@@ -30,7 +30,6 @@ from iperson.utils.llm import get_llm
 from iperson.utils.output import (
     create_output_dir,
     write_article,
-    write_audit_report,
     write_platform_content,
 )
 
@@ -133,13 +132,6 @@ async def _run_pipeline(
     if result.generated_content:
         write_article(out_dir, result.generated_content)
 
-    if result.humanized_content:
-        humanized_path = out_dir / "humanized_article.md"
-        humanized_path.write_text(result.humanized_content, encoding="utf-8")
-
-    if result.audit_result:
-        write_audit_report(out_dir, result.audit_result)
-
     if result.platform_contents:
         for plat, content in result.platform_contents.items():
             write_platform_content(out_dir, plat, content)
@@ -241,73 +233,6 @@ def _show_results(ctx: PipelineContext, out_dir: Path, verbose: bool) -> None:
             subtitle=info,
             border_style="blue",
         ))
-
-    # Humanized content diff
-    if ctx.humanized_content and ctx.humanized_content != ctx.generated_content:
-        original_len = len(ctx.generated_content or "")
-        humanized_len = len(ctx.humanized_content)
-        diff = humanized_len - original_len
-        info = Text(
-            f"Original: {original_len} chars → Humanized: {humanized_len} chars ({diff:+d})",
-            style="dim",
-        )
-        preview = ctx.humanized_content[:200]
-        if len(ctx.humanized_content) > 200:
-            preview += "..."
-        console.print(Panel(
-            preview,
-            title="[bold]Humanized Content[/bold]",
-            subtitle=info,
-            border_style="green",
-        ))
-
-    # Audit result
-    if ctx.audit_result:
-        scores = ctx.audit_result.get("scores", {})
-        status = ctx.audit_result.get("overall_status", "unknown")
-        status_icon = {"pass": "✓", "review": "△", "fail": "✗"}.get(status, "?")
-        status_color = {"pass": "green", "review": "yellow", "fail": "red"}.get(status, "white")
-
-        audit_table = Table(
-            title=f"Audit Report — [{status_color}]{status_icon} {status}[/{status_color}]",
-            border_style="dim",
-        )
-        audit_table.add_column("Dimension", style="cyan")
-        audit_table.add_column("Score", justify="right")
-        audit_table.add_column("Status", justify="center")
-
-        # Chinese dimension labels for better readability
-        dim_labels = {
-            "grounding": "事实依据",
-            "keyword_fit": "关键词合规",
-            "structure": "结构质量",
-            "platform_rules": "平台规则",
-            "style_consistency": "风格一致",
-            "ai_score": "AI 浓度",
-        }
-
-        for dim, score in sorted(scores.items()):
-            label = dim_labels.get(dim, dim)
-            if dim == "ai_score":
-                # AI score: lower is better, invert for display
-                display_score = 1.0 - score
-                score_style = (
-                    "green" if display_score >= 0.7
-                    else "yellow" if display_score >= 0.4
-                    else "red"
-                )
-                status_text = "pass" if score <= 0.35 else "review"
-            else:
-                score_style = "green" if score >= 0.7 else ("yellow" if score >= 0.4 else "red")
-                display_score = score
-                status_text = "pass" if score >= 0.7 else ("review" if score >= 0.4 else "fail")
-
-            audit_table.add_row(
-                label,
-                f"[{score_style}]{display_score:.2f}[/{score_style}]",
-                f"[{score_style}]{status_text}[/{score_style}]",
-            )
-        console.print(audit_table)
 
     # Publish results
     if ctx.publish_results:
