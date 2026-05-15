@@ -12,7 +12,7 @@ class PipelineValidationError(Exception):
     """Raised when a pipeline configuration is invalid."""
 
 
-_REQUIRED_PIPELINE_FIELDS = ["name", "stages"]
+_REQUIRED_PIPELINE_FIELDS = ["name", "nodes"]
 
 
 def validate_pipeline(data: dict) -> list[str]:
@@ -22,22 +22,17 @@ def validate_pipeline(data: dict) -> list[str]:
         if field not in data:
             errors.append(f"Missing required field: '{field}'")
 
-    stages = data.get("stages", [])
-    if not isinstance(stages, list):
-        errors.append("'stages' must be a list")
-    elif not stages:
-        errors.append("'stages' list is empty")
+    nodes = data.get("nodes", [])
+    if not isinstance(nodes, list):
+        errors.append("'nodes' must be a list")
+    elif not nodes:
+        errors.append("'nodes' list is empty")
     else:
-        for i, stage in enumerate(stages):
-            if not isinstance(stage, dict):
-                errors.append(f"Stage {i} must be a dict")
-            elif "plugin" not in stage:
-                errors.append(f"Stage {i} missing required 'plugin' field")
-
-    # Validate topic_selection field
-    ts = data.get("topic_selection")
-    if ts is not None and not isinstance(ts, bool):
-        errors.append("'topic_selection' must be a boolean")
+        for i, node in enumerate(nodes):
+            if not isinstance(node, dict):
+                errors.append(f"Node {i} must be a dict")
+            elif "node" not in node:
+                errors.append(f"Node {i} missing required 'node' field")
 
     return errors
 
@@ -45,31 +40,28 @@ def validate_pipeline(data: dict) -> list[str]:
 def load_pipeline_from_yaml(yaml_str: str) -> dict[str, Any]:
     """Parse a YAML string into a pipeline dictionary.
 
-    Returns a dict with keys: name, description, topic_selection, stages.
-    Each stage has: plugin (str), config (dict, default empty).
+    Returns a dict with keys: name, description, nodes.
+    Each node has: node (str), config (dict, default empty).
     """
     data: dict[str, Any] = yaml.safe_load(yaml_str)
     if not isinstance(data, dict):
         raise ValueError("Pipeline YAML must be a mapping")
     if "name" not in data:
         raise ValueError("Pipeline must have a 'name' field")
-    if "stages" not in data:
-        data["stages"] = []
-    if "topic_selection" not in data:
-        data["topic_selection"] = False
+    if "nodes" not in data:
+        data["nodes"] = []
 
-    # Normalize stages: ensure each has a config dict
-    normalized_stages: list[dict[str, Any]] = []
-    for stage in data["stages"]:
-        if not isinstance(stage, dict):
-            raise ValueError("Each stage must be a mapping")
-        if "plugin" not in stage:
-            raise ValueError("Each stage must have a 'plugin' field")
-        if "config" not in stage or stage["config"] is None:
-            stage["config"] = {}
-        normalized_stages.append(stage)
+    normalized_nodes: list[dict[str, Any]] = []
+    for node in data["nodes"]:
+        if not isinstance(node, dict):
+            raise ValueError("Each node must be a mapping")
+        if "node" not in node:
+            raise ValueError("Each node must have a 'node' field")
+        if "config" not in node or node["config"] is None:
+            node["config"] = {}
+        normalized_nodes.append(node)
 
-    data["stages"] = normalized_stages
+    data["nodes"] = normalized_nodes
     return data
 
 
