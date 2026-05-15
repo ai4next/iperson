@@ -149,36 +149,51 @@ async def _run_pipeline(
 
 
 async def _load_kb_context(ctx: PipelineContext, topic: str) -> PipelineContext:
-    """Load relevant KB chunks via vector search and set on pipeline context."""
+    """Load relevant KB chunks via vector search or random sampling."""
     conn = get_connection()
     try:
-        rows = conn.execute(
-            """SELECT c.id, c.content, c.chunk_index, c.embedding, d.title as doc_title
-               FROM kb_chunks c
-               JOIN kb_docs d ON c.kb_doc_id = d.id
-               WHERE c.embedding IS NOT NULL
-               ORDER BY c.created_at DESC"""
-        ).fetchall()
+        if topic:
+            # Vector search with topic query
+            rows = conn.execute(
+                """SELECT c.id, c.content, c.chunk_index, c.embedding, d.title as doc_title
+                   FROM kb_chunks c
+                   JOIN kb_docs d ON c.kb_doc_id = d.id
+                   WHERE c.embedding IS NOT NULL
+                   ORDER BY c.created_at DESC"""
+            ).fetchall()
+
+            if not rows:
+                return ctx
+
+            vs = VectorStore()
+            for row in rows:
+                emb = np.frombuffer(row["embedding"], dtype=np.float64).tolist()
+                vs.add(emb, {
+                    "text": row["content"],
+                    "metadata": {},
+                    "doc_title": row["doc_title"],
+                })
+
+            embedder = OpenAIEmbedder()
+            query_vector = await embedder.embed(topic)
+            results = vs.search(query_vector, top_k=5)
+            ctx.kb_chunks = results
+        else:
+            # No topic: random sampling for topic selection
+            rows = conn.execute(
+                """SELECT c.id, c.content, c.chunk_index, d.title as doc_title
+                   FROM kb_chunks c
+                   JOIN kb_docs d ON c.kb_doc_id = d.id
+                   ORDER BY RANDOM()
+                   LIMIT 20"""
+            ).fetchall()
+            ctx.kb_chunks = [
+                {"text": row["content"], "metadata": {}, "doc_title": row["doc_title"]}
+                for row in rows
+            ]
     finally:
         conn.close()
 
-    if not rows:
-        return ctx
-
-    vs = VectorStore()
-    for row in rows:
-        emb = np.frombuffer(row["embedding"], dtype=np.float64).tolist()
-        vs.add(emb, {
-            "text": row["content"],
-            "metadata": {},
-            "doc_title": row["doc_title"],
-        })
-
-    embedder = OpenAIEmbedder()
-    query_vector = await embedder.embed(topic)
-    results = vs.search(query_vector, top_k=5)
-
-    ctx.kb_chunks = results
     return ctx
 
 
