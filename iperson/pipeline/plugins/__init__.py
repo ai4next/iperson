@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from iperson.pipeline.plugins.generation.article import ArticleGenerationPlugin
 from iperson.pipeline.plugins.publish.multiplatform import MultiplatformPublishPlugin
-from iperson.pipeline.plugins.quality.humanizer import HumanizerPlugin
 from iperson.pipeline.plugins.research.kb_retrieve import KbRetrievePlugin
 from iperson.pipeline.registry import PluginRegistry
 
@@ -19,7 +18,6 @@ def register_builtin_plugins(registry: PluginRegistry) -> None:
 __all__ = [
     "KbRetrievePlugin",
     "ArticleGenerationPlugin",
-    "HumanizerPlugin",
     "MultiplatformPublishPlugin",
     "register_builtin_plugins",
 ]
