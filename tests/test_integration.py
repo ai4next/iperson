@@ -34,15 +34,7 @@ def _make_persona(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a minimal persona dict for testing."""
     base = {
         "name": "测试",
-        "language": "zh",
-        "system_prompt": "你是测试助手。",
-        "tone_instruction": "专业",
-        "banned_patterns": [],
-        "keywords": [],
-        "focus_areas": [],
-        "content_types": [],
-        "few_shot_examples": [],
-        "style_profile": {},
+        "soul_content": "你是测试助手。专业但不枯燥。",
     }
     if overrides:
         base.update(overrides)
@@ -60,16 +52,13 @@ class TestQuickRecipeIntegration:
         orchestrator = PipelineOrchestrator(registry)
         recipe = load_recipe_from_yaml(QUICK_RECIPE)
 
-        ctx = PipelineContext(persona_id="test", topic="RAG技术入门")
+        ctx = PipelineContext(persona_name="test", topic="RAG技术入门")
         ctx.data["llm_client"] = DummyLLM(
             response="Test generated article about RAG technology."
         )
         ctx.data["platform"] = "xiaohongshu"
         ctx.data["keywords"] = ["RAG"]
-        ctx.data["persona"] = _make_persona({
-            "banned_patterns": ["值得注意的是"],
-            "keywords": ["AI", "RAG"],
-        })
+        ctx.data["persona"] = _make_persona()
         ctx.kb_chunks = [
             {"text": "RAG（检索增强生成）是一种结合检索和生成的AI架构。", "index": 0},
             {"text": "RAG可以显著减少大模型的幻觉问题。", "index": 1},
@@ -93,7 +82,7 @@ class TestQuickRecipeIntegration:
         orchestrator = PipelineOrchestrator(registry)
         recipe = load_recipe_from_yaml(QUICK_RECIPE)
 
-        ctx = PipelineContext(persona_id="test", topic="通用话题")
+        ctx = PipelineContext(persona_name="test", topic="通用话题")
         ctx.data["llm_client"] = DummyLLM(response="Some content.")
         ctx.data["platform"] = "xiaohongshu"
         ctx.data["keywords"] = ["通用"]

@@ -18,57 +18,320 @@ cd iperson
 uv sync --all-extras
 ```
 
-### 配置
+### 初始化配置
 
 ```bash
-# 初始化配置文件
+# 创建配置目录
 mkdir -p ~/.iperson
+
+# 编辑配置文件
 vim ~/.iperson/config.yaml
 ```
 
 ```yaml
 # ~/.iperson/config.yaml
 llm:
-  provider: openai         # 或 anthropic
-  api_key: sk-xxx
-  model: gpt-4o
-  embedding_model: text-embedding-3-small   # OpenAI: text-embedding-3-small / text-embedding-3-large / text-embedding-ada-002
+  provider: openai              # 或 anthropic / gemini
+  api_key: sk-xxx               # 你的 API Key
+  model: gpt-4o                 # 生成模型
+  embedding_model: text-embedding-3-small   # 仅 OpenAI 系列
 ```
 
-> **说明**：embedding 模型仅支持 OpenAI 系列（Anthropic 不提供 embedding 模型），即使 `provider` 设为 `anthropic`，embedding 仍走 OpenAI。可在 `~/.iperson/config.yaml` 中配置，或通过环境变量 `IPERSON_LLM_EMBEDDING_MODEL` 覆盖。
+> **说明**：embedding 模型仅支持 OpenAI 系列（Anthropic 不提供 embedding 模型），即使 `provider` 设为 `anthropic`，embedding 仍走 OpenAI。
 
-也支持按阶段配置不同的 LLM 提供商和模型：
-
-```yaml
-providers:
-  - stage: default          provider: openai    model: gpt-4o          temperature: 0.7
-  - stage: generation       provider: openai    model: gpt-4o          temperature: 0.8
-  - stage: audit            provider: openai    model: gpt-4o          temperature: 0.3
-  - stage: humanizer        provider: openai    model: gpt-4o          temperature: 0.5
-```
-
-所有配置项均可通过 `IPERSON_<KEY>` 环境变量覆盖（如 `IPERSON_LLM_API_KEY`）。
-
-### 基础使用
+### 首次运行
 
 ```bash
-# 查看帮助
-iperson
+# 1. 导入知识库文档（将你的素材喂给系统）
+iperson kb import ./my-articles/
 
-# 导入知识库文档
-iperson kb import ./docs
-
-# 搜索知识库
-iperson kb search "你的主题"
-
-# 创建人设
+# 2. 创建人设（定义你的写作风格）
 iperson persona create
 
-# 运行管线（按 recipe 顺序执行多阶段）
+# 3. 运行内容管线
 iperson publish run --recipe quick --topic "你的选题"
 
-# 查看质量审核报告
-iperson audit report ./output/xxx/
+# 4. 查看输出
+ls ~/.iperson/output/
+```
+
+---
+
+## 配置参考
+
+### 完整配置项
+
+```yaml
+# ~/.iperson/config.yaml
+
+# LLM 全局配置
+llm:
+  provider: openai              # openai / anthropic / gemini
+  api_key: sk-xxx
+  model: gpt-4o
+  embedding_model: text-embedding-3-small
+
+# 按阶段独立配置 LLM（覆盖全局配置）
+providers:
+  - stage: default              provider: openai    model: gpt-4o          temperature: 0.7
+  - stage: generation           provider: openai    model: gpt-4o          temperature: 0.8
+  - stage: audit                provider: openai    model: gpt-4o          temperature: 0.3
+  - stage: humanizer            provider: openai    model: gpt-4o          temperature: 0.5
+
+# 数据目录（默认 ~/.iperson/data）
+data_dir: ~/.iperson/data
+output_dir: ~/.iperson/output
+
+# 数据库路径
+db:
+  path: ~/.iperson/data/iperson.db
+
+# Webhook 通知（可选）
+webhooks:
+  - url: https://your-server.com/webhook
+    secret: your-hmac-secret
+```
+
+### 环境变量覆盖
+
+所有配置项均可通过 `IPERSON_<KEY>` 环境变量覆盖：
+
+```bash
+export IPERSON_LLM_API_KEY=sk-xxx
+export IPERSON_LLM_MODEL=gpt-4o
+export IPERSON_LLM_EMBEDDING_MODEL=text-embedding-3-large
+export IPERSON_DB_PATH=/custom/path/iperson.db
+```
+
+嵌套字段使用下划线连接：`IPERSON_LLM_API_KEY` 对应 `llm.api_key`。
+
+### 按阶段 LLM 配置
+
+每个管道阶段可指定不同的 provider / model / temperature：
+
+| 阶段 | 用途 | 推荐 temperature |
+|------|------|-----------------|
+| `default` | 未匹配阶段的回退配置 | 0.7 |
+| `generation` | 内容生成（创意性要求高） | 0.8 |
+| `audit` | 质量审核（需确定性判断） | 0.3 |
+| `humanizer` | AI 痕迹淡化改写 | 0.5 |
+
+未配置的阶段会自动回退到 `default`。
+
+---
+
+## 管线与 Recipe
+
+### 什么是 Recipe？
+
+Recipe（配方）是 YAML 格式的管线编排文件，定义内容生产的阶段顺序和每个阶段的配置。系统按 Recipe 定义的阶段依次执行。
+
+### 内置 Recipe
+
+| Recipe | 适用场景 | 阶段数 | 目标平台 |
+|--------|----------|--------|----------|
+| `quick` | 个人日更，5 分钟出稿 | 5 阶段 | 小红书 |
+| `full` | 深度内容创作 | 5 阶段 | 小红书 + 微信 + 知乎 |
+| `trending` | 快速追热点 | 5 阶段（精简审核） | 小红书 |
+
+### Recipe 完整语法
+
+```yaml
+name: "极速模式"
+description: "个人创作者日更，5分钟出稿"
+stages:
+  - plugin: research.kb_retrieve
+    config:
+      top_k: 5
+
+  - plugin: generation.article
+    hooks:                          # 可选：阶段钩子
+      before:
+        - hook: intelligence.trending_inject
+          config: { source: zhihu }
+        - hook: safety.prompt_guard
+      after:
+        - hook: intelligence.seo_analyze
+        - hook: safety.content_scan
+
+  - plugin: quality.humanizer
+    config:
+      min_score: 0.35
+      max_iterations: 2
+
+  - plugin: quality.audit
+    config:
+      on_fail: regenerate           # abort / skip / flag / regenerate
+
+  - plugin: publish.multiplatform
+    hooks:
+      before:
+        - hook: media.image_gen
+          config: { provider: openai, style: "flat illustration, warm tones", count: 2, cover: true }
+      after:
+        - hook: webhook.notify
+    config:
+      platforms: [xiaohongshu]
+```
+
+### 自定义 Recipe
+
+将 YAML 文件放入 `~/.iperson/data/recipes/` 即可：
+
+```bash
+mkdir -p ~/.iperson/data/recipes
+vim ~/.iperson/data/recipes/my-recipe.yaml
+```
+
+然后通过 `--recipe my-recipe` 引用。
+
+---
+
+## 钩子系统 (Hooks)
+
+钩子是在管线阶段执行前后插入的扩展点，用于在不修改阶段插件的情况下增强管线能力。
+
+### 内置钩子
+
+| 钩子 ID | 挂载点 | 功能 | 配置参数 |
+|---------|--------|------|----------|
+| `intelligence.trending_inject` | `before.generation` | 从知乎/微博获取热点话题，注入生成上下文 | `source`: `zhihu` / `weibo` |
+| `safety.prompt_guard` | `before.generation` | 检查生成环境是否完备（如人设引擎是否存在） | 无 |
+| `intelligence.seo_analyze` | `after.generation` | 分析内容字数、可读性、关键词密度等 SEO 指标 | 无 |
+| `safety.content_scan` | `after.generation` | 扫描生成内容中的屏蔽词 | 无 |
+| `media.image_gen` | `before.publish` | 调用 DALL-E 生成封面和内文配图 | `provider`, `style`, `count`, `cover` |
+| `webhook.notify` | `after.publish` | 管线完成后发送 HTTP 通知（HMAC-SHA256 签名） | 从 `config.yaml` 读取 `webhooks` 配置 |
+
+### 在 Recipe 中配置钩子
+
+钩子在 Recipe 的 `hooks` 字段中配置，分为 `before` 和 `after`：
+
+```yaml
+stages:
+  - plugin: generation.article
+    hooks:
+      before:
+        - hook: intelligence.trending_inject
+          config: { source: zhihu }       # 传给钩子的配置
+        - hook: safety.prompt_guard
+      after:
+        - hook: intelligence.seo_analyze
+        - hook: safety.content_scan
+```
+
+### Webhook 配置
+
+Webhook 通知钩子从全局配置读取目标地址：
+
+```yaml
+# ~/.iperson/config.yaml
+webhooks:
+  - url: https://your-server.com/pipeline/notify
+    secret: your-hmac-secret
+```
+
+通知 payload 格式：
+
+```json
+{
+  "event": "pipeline.complete",
+  "topic": "你的选题",
+  "status": "completed",
+  "content_id": "xxx",
+  "errors": []
+}
+```
+
+请求头携带 `X-Webhook-Signature: <sha256-hex>` 用于验签。
+
+### 自定义钩子
+
+将继承 `BaseHook` 的 `.py` 文件放入 `~/.iperson/plugins/`，系统自动加载：
+
+```python
+# ~/.iperson/plugins/my_hook.py
+from iperson.pipeline.hook import BaseHook, HookContext
+
+class MyCustomHook(BaseHook):
+    hook_id = "custom.my_hook"
+    hook_point = "after.generation"       # 挂载点
+    name = "My Custom Hook"
+    description = "Does something useful"
+
+    async def execute(self, ctx: HookContext) -> HookContext:
+        # 读取配置（来自 recipe 中 hooks 字段的 config）
+        param = ctx.config.get("param", "default")
+        # 操作管线上下文
+        ctx.pipeline_ctx.data["my_result"] = param
+        return ctx
+```
+
+### 查看已安装的钩子
+
+```bash
+iperson plugin list-plugins
+```
+
+同时列出已注册的插件和钩子。
+
+---
+
+## 插件管理
+
+### 内置插件
+
+| 插件 ID | 阶段 | 功能 |
+|---------|------|------|
+| `research.kb_retrieve` | Research | 从知识库检索 Top-K 相关素材 |
+| `generation.article` | Generation | 结合人设与素材生成文章正文 |
+| `quality.humanizer` | Quality | AI 痕迹淡化（检测 → 评分 → 改写） |
+| `quality.audit` | Quality | 多维度质量审核 |
+| `publish.multiplatform` | Publish | 多平台格式适配与内容导出 |
+
+### 安装第三方插件
+
+```bash
+# 从 pip 安装（包名需以 iperson_plugin_ 开头）
+iperson plugin install iperson_plugin_xxx
+
+# 卸载
+iperson plugin remove iperson_plugin_xxx
+
+# 查看已安装的插件和钩子
+iperson plugin list-plugins
+```
+
+### 开发自定义插件
+
+将文件放入 `~/.iperson/plugins/` 即可自动加载：
+
+```python
+# ~/.iperson/plugins/my_plugin.py
+from iperson.pipeline.context import PipelineContext
+from iperson.pipeline.plugin import StagePlugin
+
+class MyPlugin(StagePlugin):
+    plugin_id = "custom.my_plugin"
+    name = "My Plugin"
+    description = "Custom pipeline stage"
+    category = "quality"
+    version = "1.0.0"
+    tags = ["custom"]
+    config_schema = {}
+    default_config = {}
+
+    def execute(self, ctx: PipelineContext, config: dict) -> PipelineContext:
+        # 实现你的阶段逻辑
+        return ctx
+```
+
+然后在 Recipe 中引用：
+
+```yaml
+stages:
+  - plugin: custom.my_plugin
+    config:
+      your_param: value
 ```
 
 ## CLI 命令参考
@@ -76,16 +339,23 @@ iperson audit report ./output/xxx/
 | 命令 | 说明 |
 |------|------|
 | `iperson publish run` | 运行内容生产管线（核心命令） |
+| `iperson publish status` | 查看发布队列状态 |
+| `iperson publish schedule` | 设置定时发布 |
+| `iperson publish retry` | 重试失败的发布 |
 | `iperson kb import` | 导入文档到知识库 |
 | `iperson kb search` | 混合检索知识库 |
 | `iperson persona create` | 创建/编辑创作者人设 |
+| `iperson persona list` | 列出已保存的人设 |
 | `iperson audit report` | 查看质量审核报告 |
 | `iperson analytics collect` | 记录内容表现数据 |
 | `iperson analytics report` | 查看内容表现分析 |
 | `iperson topics suggest` | 基于 KB 和分析数据推荐选题 |
 | `iperson agent run` | 运行单次自主内容生成 |
-| `iperson agent auto` | 自动选题并生成内容 |
+| `iperson agent auto` | 自动选题并生成 N 篇内容 |
 | `iperson tuning analyze` | 分析人设风格并给出调优建议 |
+| `iperson plugin list-plugins` | 列出已安装的插件和钩子 |
+| `iperson plugin install` | 从 pip 安装插件 |
+| `iperson plugin remove` | 卸载 pip 插件 |
 | `iperson --version` | 查看版本号 |
 
 ### `iperson publish run` 完整选项
@@ -173,12 +443,43 @@ stages:
 
 ### 人设引擎 (`iperson persona`)
 
-定义和管理创作者人设，控制生成内容的风格与语气：
+人设是创作者的数字灵魂，定义生成内容的风格与语气。每个人设是一个目录：
 
-- 系统提示词（`system_prompt`）+ 语气指令（`tone_instruction`）+ 风格画像（`style_profile`）
-- 少样本示例（`few_shot_examples`）+ 禁用词模式（`banned_patterns`）
-- 人设文件以 YAML 格式存储于 `~/.iperson/personas/`
-- 内置默认人设，含常用禁用词：*值得注意的是、总的来说、综上所述*
+```
+~/.iperson/personas/{name}/
+├── soul.md       # 人设灵魂（Markdown，直接作为 LLM 系统提示）
+└── config.yaml   # 配置（如 is_active）
+```
+
+`soul.md` 是自由格式的 Markdown，描述你的写作风格、语气、关注领域等，内容直接作为 LLM 系统提示：
+
+```markdown
+# 科技博主小明 的人设灵魂
+
+## 基本定位
+科技领域深度内容创作者，专注 AI 和编程。
+
+## 语气风格
+- 专业但不枯燥
+- 数据驱动，每观点必有依据
+- 善用类比解释复杂概念
+
+## 写作规范
+- 开头直接切入主题
+- 多用短句，段落不超过 5 行
+- 避免 AI 套话
+```
+
+```bash
+# 创建人设（会生成 soul.md 模板）
+iperson persona create 科技博主小明
+
+# 编辑人设
+vim ~/.iperson/personas/科技博主小明/soul.md
+
+# 列出所有人设
+iperson persona list
+```
 
 ### 内容生成 (`generation.article`)
 
@@ -226,7 +527,10 @@ stages:
 ├── config.yaml              # 全局配置
 ├── data/
 │   └── iperson.db           # SQLite 数据库
-├── personas/                 # 人设 YAML 文件
+├── personas/                 # 人设目录
+│   └── {name}/
+│       ├── soul.md          # 人设灵魂
+│       └── config.yaml      # 人设配置
 └── output/                   # 管线输出
     └── {timestamp}-{topic}/
         ├── article.md                 # 原始生成内容
@@ -245,12 +549,10 @@ SQLite 数据库（`~/.iperson/data/iperson.db`）包含以下表：
 | 表名 | 说明 |
 |------|------|
 | `contents` | 内容记录（含草稿、终稿、审核分数） |
-| `personas` | 人设持久化 |
 | `publications` | 发布记录（平台、状态、时间） |
 | `kb_docs` | 知识库文档 |
 | `kb_chunks` | 文档分块（含向量 Embedding） |
-| `audit_reports` | 审核报告 |
-| `pipeline_runs` | 管线运行记录 |
+| `content_metrics` | 内容表现数据（阅读/点赞/分享/评论） |
 
 ## 技术栈
 
@@ -314,37 +616,57 @@ iperson/
 │   ├── full.yaml
 │   ├── quick.yaml
 │   └── trending.yaml
-├── tests/                      # 测试套件（12 个测试文件）
+├── tests/                      # 测试套件（22 个测试文件）
 ├── iperson/
 │   ├── cli/                    # CLI 入口
 │   │   ├── app.py             # Typer 应用主入口
-│   │   ├── publish_cmd.py     # publish 命令组
+│   │   ├── publish_cmd.py     # publish 命令组（run/status/schedule/retry）
 │   │   ├── kb_cmd.py          # kb 命令组
 │   │   ├── persona_cmd.py     # persona 命令组
-│   │   └── audit_cmd.py       # audit 命令组
+│   │   ├── audit_cmd.py       # audit 命令组
+│   │   ├── agent_cmd.py       # agent 命令组
+│   │   ├── analytics_cmd.py   # analytics 命令组
+│   │   ├── topics_cmd.py      # topics 命令组
+│   │   ├── tuning_cmd.py      # tuning 命令组
+│   │   └── plugin_cmd.py      # plugin 命令组
 │   ├── pipeline/               # 管线引擎
 │   │   ├── orchestrator.py    # PipelineOrchestrator
 │   │   ├── context.py         # PipelineContext（状态传递）
-│   │   ├── recipe.py          # Recipe 加载
+│   │   ├── recipe.py          # Recipe 加载与验证
 │   │   ├── registry.py        # 插件注册表
 │   │   ├── plugin.py          # StagePlugin 基类
-│   │   └── plugins/           # 内置插件实现
-│   │       ├── research/kb_retrieve.py
-│   │       ├── generation/article.py
-│   │       ├── quality/audit.py
-│   │       ├── quality/humanizer.py
-│   │       └── publish/multiplatform.py
+│   │   ├── loader.py          # FilePluginLoader / PipPluginLoader
+│   │   ├── hook.py            # BaseHook / HookRegistry
+│   │   ├── hook_orchestrator.py # HookOrchestrator
+│   │   ├── circuit_breaker.py # 熔断保护
+│   │   ├── errors.py          # PipelineError
+│   │   ├── plugins/           # 内置插件实现
+│   │   │   ├── research/kb_retrieve.py
+│   │   │   ├── generation/article.py
+│   │   │   ├── quality/audit.py
+│   │   │   ├── quality/humanizer.py
+│   │   │   └── publish/multiplatform.py
+│   │   └── hooks/             # 内置钩子实现
+│   │       ├── trending_inject.py
+│   │       ├── prompt_guard.py
+│   │       ├── seo_analyze.py
+│   │       ├── content_scan.py
+│   │       ├── image_gen.py
+│   │       └── webhook_notify.py
 │   ├── core/                   # 核心业务逻辑
 │   │   ├── persona/           # 人设引擎
-│   │   ├── kb/                # 知识库
+│   │   ├── kb/                # 知识库（分块/加载/向量/BM25/混合搜索）
 │   │   ├── generation/        # 内容生成
 │   │   ├── humanizer/         # AI 痕迹淡化
-│   │   ├── audit/             # 质量审核
-│   │   └── output/            # 输出格式化
-│   ├── storage/                # 数据持久化
-│   │   ├── db.py             # SQLite 连接管理
-│   │   └── models.py         # Pydantic 数据模型
-│   └── utils/                  # 工具库
-│       ├── llm.py            # LLM 客户端（含 DummyLLM 测试替身）
-│       └── output.py         # 输出文件写入
+│   │   ├── audit/             # 质量审核（6 维度）
+│   │   ├── media/             # 图像生成
+│   │   ├── output/            # 输出 Pydantic 模型
+│   │   └── security/          # 屏蔽词列表
+│   ├── agent/                 # 数字分身自主代理
+│   ├── analytics/             # 内容分析引擎
+│   ├── topics/                # 选题建议引擎
+│   ├── tuning/                # 风格调优引擎
+│   ├── publish/               # 发布引擎 + 平台客户端
+│   ├── storage/               # 数据持久化（SQLite + Pydantic）
+│   └── utils/                 # 工具库（LLM 工厂、文件输出）
 ```

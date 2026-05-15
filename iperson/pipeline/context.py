@@ -11,13 +11,13 @@ class PipelineContext:
 
     def __init__(
         self,
-        persona_id: str = "",
+        persona_name: str = "",
         topic: str = "",
         recipe_name: str = "quick",
         content_id: str | None = None,
     ) -> None:
         self.id: str = uuid.uuid4().hex
-        self.persona_id: str = persona_id
+        self.persona_name: str = persona_name
         self.topic: str = topic
         self.recipe_name: str = recipe_name
         self.content_id: str | None = content_id
@@ -44,7 +44,7 @@ class PipelineContext:
         """Serialize the current context state to a dictionary."""
         return {
             "id": self.id,
-            "persona_id": self.persona_id,
+            "persona_name": self.persona_name,
             "topic": self.topic,
             "recipe_name": self.recipe_name,
             "content_id": self.content_id,
@@ -66,7 +66,7 @@ class PipelineContext:
     def from_snapshot(cls, snapshot: dict[str, Any]) -> PipelineContext:
         """Restore a context from a snapshot dictionary."""
         ctx = cls(
-            persona_id=snapshot.get("persona_id", ""),
+            persona_name=snapshot.get("persona_name", ""),
             topic=snapshot.get("topic", ""),
             recipe_name=snapshot.get("recipe_name", "quick"),
             content_id=snapshot.get("content_id"),

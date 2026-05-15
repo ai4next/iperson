@@ -17,10 +17,7 @@ def analyze(
     """Analyze persona style and suggest improvements."""
     engine = StyleTuningEngine()
 
-    banned_suggestions = engine.analyze_banned_patterns(persona)
-    style_suggestions = engine.suggest_style_adjustments(persona)
-
-    all_suggestions = banned_suggestions + style_suggestions
+    all_suggestions = engine.suggest_style_adjustments(persona)
     if not all_suggestions:
         console.print("[yellow]No tuning suggestions available. Generate more content first.[/yellow]")
         raise typer.Exit()

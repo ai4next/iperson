@@ -15,8 +15,9 @@ from iperson.core.kb.embedder import OpenAIEmbedder
 from iperson.core.kb.vector_store import VectorStore
 from iperson.core.persona.engine import PersonaEngine
 from iperson.core.persona.profile import (
+    PERSONAS_DIR,
     create_default_persona,
-    load_persona_from_file,
+    load_persona,
 )
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
@@ -75,16 +76,12 @@ async def _run_pipeline(
         console.print(f"[dim]Loaded recipe:[/dim] {recipe_data.get('name', recipe_name)}")
 
     # Load or create persona
-    persona_path = Path(f"~/.iperson/personas/{persona_name or 'default'}.yaml").expanduser()
-    if persona_path.exists():
-        persona_profile = load_persona_from_file(persona_path)
-        if verbose:
-            console.print(f"[dim]Loaded persona:[/dim] {persona_profile.name}")
-    else:
+    persona_profile = load_persona(persona_name or "default")
+    if persona_profile is None:
         if persona_name:
             msg = (
                 f"[yellow]Warning:[/yellow] Persona '{persona_name}' "
-                f"not found at {persona_path}, using defaults"
+                f"not found at {PERSONAS_DIR / persona_name / 'soul.md'}, using defaults"
             )
             console.print(msg)
         persona_profile = create_default_persona(persona_name or "default")
@@ -100,7 +97,7 @@ async def _run_pipeline(
 
     # Pipeline context
     ctx = PipelineContext(
-        persona_id=persona_profile.name,
+        persona_name=persona_profile.name,
         topic=topic,
         recipe_name=recipe_name,
     )

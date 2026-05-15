@@ -10,7 +10,7 @@ def init_db() -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS contents (
                 id TEXT PRIMARY KEY,
-                persona_id TEXT,
+                persona_name TEXT,
                 recipe_name TEXT,
                 topic TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
@@ -22,25 +22,6 @@ def init_db() -> None:
                 ai_score REAL,
                 model_used TEXT,
                 metadata TEXT DEFAULT '{}',
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS personas (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL DEFAULT '',
-                persona_type TEXT NOT NULL DEFAULT '',
-                language TEXT NOT NULL DEFAULT 'zh-CN',
-                system_prompt TEXT NOT NULL DEFAULT '',
-                tone_instruction TEXT NOT NULL DEFAULT '',
-                style_profile TEXT NOT NULL DEFAULT '',
-                few_shot_examples TEXT NOT NULL DEFAULT '',
-                banned_patterns TEXT NOT NULL DEFAULT '',
-                keywords TEXT NOT NULL DEFAULT '',
-                focus_areas TEXT NOT NULL DEFAULT '',
-                content_types TEXT NOT NULL DEFAULT '',
-                is_active INTEGER NOT NULL DEFAULT 1,
-                config TEXT DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -78,24 +59,6 @@ def init_db() -> None:
                 embedding BLOB,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (kb_doc_id) REFERENCES kb_docs(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS audit_reports (
-                id TEXT PRIMARY KEY,
-                report_type TEXT NOT NULL,
-                content TEXT NOT NULL,
-                metadata TEXT DEFAULT '{}',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS pipeline_runs (
-                id TEXT PRIMARY KEY,
-                pipeline_name TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                started_at TEXT,
-                completed_at TEXT,
-                metadata TEXT DEFAULT '{}',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS content_metrics (

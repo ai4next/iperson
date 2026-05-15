@@ -65,7 +65,7 @@ def build_generation_prompt(
 
     title = topic.get("title", "")
     summary = topic.get("summary", "")
-    template_str = USER_TEMPLATE_ZH if persona.language == "zh" else USER_TEMPLATE_EN
+    template_str = USER_TEMPLATE_ZH
 
     if structured:
         parser = PydanticOutputParser(pydantic_object=GenerationOutput)

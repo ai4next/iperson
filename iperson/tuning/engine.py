@@ -16,60 +16,6 @@ class TuningSuggestion:
 class StyleTuningEngine:
     """Analyzes content performance and suggests persona style adjustments."""
 
-    def analyze_banned_patterns(self, persona_name: str) -> list[TuningSuggestion]:
-        """Analyze which banned patterns are being triggered most."""
-        from iperson.storage.db import get_connection
-        conn = get_connection()
-        try:
-            persona = conn.execute(
-                "SELECT id, banned_patterns FROM personas WHERE name = ?",
-                (persona_name,),
-            ).fetchone()
-        finally:
-            conn.close()
-
-        if not persona:
-            return []
-
-        import json
-        banned = json.loads(persona["banned_patterns"]) if isinstance(persona["banned_patterns"], str) else persona["banned_patterns"] or []
-
-        suggestions = []
-        from iperson.core.humanizer.detector import AIDetector
-        detector = AIDetector()
-
-        # Check for patterns that appear too often in generated content
-        conn = get_connection()
-        try:
-            rows = conn.execute(
-                "SELECT draft_content FROM contents WHERE persona_id = (SELECT id FROM personas WHERE name = ?) ORDER BY created_at DESC LIMIT 10",
-                (persona_name,),
-            ).fetchall()
-        finally:
-            conn.close()
-
-        if not rows:
-            return suggestions
-
-        combined = " ".join(r["draft_content"] or "" for r in rows)
-        matches = detector.detect(combined)
-
-        # Group by category
-        from collections import Counter
-        cat_counts = Counter(m.category for m in matches)
-
-        for cat, count in cat_counts.most_common(3):
-            confidence = min(1.0, count / 5)
-            suggestions.append(TuningSuggestion(
-                dimension=f"ai_pattern_{cat}",
-                current_value=f"出现{count}次",
-                suggested_value=f"减少{cat}类AI表达",
-                reason=f"生成内容中{cat}类AI模式出现{count}次，建议加入禁用词列表",
-                confidence=confidence,
-            ))
-
-        return suggestions
-
     def suggest_style_adjustments(self, persona_name: str) -> list[TuningSuggestion]:
         """Suggest style adjustments based on content performance."""
         from iperson.storage.db import get_connection
@@ -82,7 +28,7 @@ class StyleTuningEngine:
                 SELECT c.id, c.topic, m.views, m.likes
                 FROM contents c
                 JOIN content_metrics m ON m.content_id = c.id
-                WHERE c.persona_id = (SELECT id FROM personas WHERE name = ?)
+                WHERE c.persona_name = ?
                 ORDER BY m.views ASC
                 LIMIT 5
             """, (persona_name,)).fetchall()

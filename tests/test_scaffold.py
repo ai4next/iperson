@@ -16,12 +16,9 @@ from iperson.config import (
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
 from iperson.storage.models import (
-    AuditReportRecord,
     ContentRecord,
     KbChunkRecord,
     KbDocRecord,
-    PersonaRecord,
-    PipelineRunRecord,
     PublicationRecord,
 )
 from iperson.utils.llm import DummyLLM
@@ -92,12 +89,10 @@ class TestStorage:
                 )
                 tables = [row["name"] for row in cursor.fetchall()]
                 expected = [
-                    "audit_reports",
+                    "content_metrics",
                     "contents",
                     "kb_chunks",
                     "kb_docs",
-                    "personas",
-                    "pipeline_runs",
                     "publications",
                 ]
                 for t in expected:
@@ -131,16 +126,6 @@ class TestStorage:
         assert record.draft_content == "Hello world"
         assert record.metadata == {}
 
-    def test_persona_record_model(self) -> None:
-        record = PersonaRecord(
-            id="persona-1",
-            name="Tech Blogger",
-            persona_type="writer",
-            config={"tone": "professional"},
-        )
-        assert record.name == "Tech Blogger"
-        assert record.config["tone"] == "professional"
-
     def test_publication_record_model(self) -> None:
         record = PublicationRecord(
             id="pub-1",
@@ -169,23 +154,6 @@ class TestStorage:
         )
         assert record.chunk_index == 0
         assert record.embedding is None
-
-    def test_audit_report_record_model(self) -> None:
-        record = AuditReportRecord(
-            id="report-1",
-            report_type="quality",
-            content="All checks passed",
-        )
-        assert record.report_type == "quality"
-
-    def test_pipeline_run_record_model(self) -> None:
-        record = PipelineRunRecord(
-            id="run-1",
-            pipeline_name="generate-blog",
-            status="running",
-        )
-        assert record.pipeline_name == "generate-blog"
-        assert record.status == "running"
 
 
 class TestDummyLLM:

@@ -23,7 +23,7 @@ class TestBuildGenerationMessages:
         return [{"role": role_map.get(m.type, m.type), "content": m.content} for m in messages]
 
     def test_build_with_persona_and_kb(self) -> None:
-        persona = PersonaProfile(name="测试", system_prompt="你是测试助手。", language="zh")
+        persona = PersonaProfile(name="测试", soul_content="你是测试助手。")
         topic = {"title": "AI的未来", "summary": "探讨人工智能的发展趋势"}
         kb_context = "来源1: AI正在快速发展\n来源2: 2025年AI市场规模达千亿"
 
@@ -38,7 +38,7 @@ class TestBuildGenerationMessages:
         assert "人工智能" in messages[1]["content"]
 
     def test_without_kb_context(self) -> None:
-        persona = PersonaProfile(name="测试", system_prompt="你是测试助手。", language="zh")
+        persona = PersonaProfile(name="测试", soul_content="你是测试助手。")
         topic = {"title": "AI的未来", "summary": "探讨人工智能的发展趋势"}
 
         messages = self._format(persona, topic)
@@ -47,22 +47,8 @@ class TestBuildGenerationMessages:
         assert messages[0]["content"] == "你是测试助手。"
         assert "Knowledge Base Context" not in messages[0]["content"]
 
-    def test_english_persona(self) -> None:
-        persona = PersonaProfile(name="Test", system_prompt="You are a test assistant.", language="en")
-        topic = {"title": "Future of AI", "summary": "Exploring AI trends"}
-
-        messages = self._format(persona, topic)
-
-        assert len(messages) == 2
-        user = messages[1]["content"]
-        assert "主题" not in user
-        assert "请根据以上主题" not in user
-        assert "Topic:" in user
-        assert "Future of AI" in user
-        assert "Summary:" in user
-
     def test_empty_topic(self) -> None:
-        persona = PersonaProfile(name="测试", system_prompt="你是测试助手。", language="zh")
+        persona = PersonaProfile(name="测试", soul_content="你是测试助手。")
         topic: dict[str, Any] = {}
 
         messages = self._format(persona, topic)
@@ -78,7 +64,7 @@ class TestGenerationEngine:
     async def test_generation_engine_with_dummy_llm(self) -> None:
         dummy = DummyLLM()
         engine = GenerationEngine(llm=dummy)
-        persona = PersonaProfile(name="测试", system_prompt="你是测试助手。", language="zh")
+        persona = PersonaProfile(name="测试", soul_content="你是测试助手。")
         topic = {"title": "测试", "summary": "测试内容"}
 
         result = await engine.generate(persona, topic)
@@ -106,7 +92,7 @@ class TestGenerationEngine:
 
         dummy = TempTrackingDummy()
         engine = GenerationEngine(llm=dummy)
-        persona = PersonaProfile(name="测试", system_prompt="你是测试助手。", language="zh")
+        persona = PersonaProfile(name="测试", soul_content="你是测试助手。")
         topic = {"title": "测试", "summary": "测试内容"}
 
         dummy.temperature = 0.9

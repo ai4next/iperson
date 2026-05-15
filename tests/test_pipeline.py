@@ -65,8 +65,8 @@ class FailingStage(StagePlugin):
 
 class TestPipelineContext:
     def test_create_context(self) -> None:
-        ctx = PipelineContext(persona_id="persona-1", topic="Python")
-        assert ctx.persona_id == "persona-1"
+        ctx = PipelineContext(persona_name="persona-1", topic="Python")
+        assert ctx.persona_name == "persona-1"
         assert ctx.topic == "Python"
         assert ctx.recipe_name == "quick"
         assert ctx.status == "running"
@@ -85,18 +85,18 @@ class TestPipelineContext:
 
     def test_create_context_with_content_id(self) -> None:
         ctx = PipelineContext(
-            persona_id="persona-2",
+            persona_name="persona-2",
             topic="Go",
             recipe_name="full",
             content_id="content-123",
         )
-        assert ctx.persona_id == "persona-2"
+        assert ctx.persona_name == "persona-2"
         assert ctx.topic == "Go"
         assert ctx.recipe_name == "full"
         assert ctx.content_id == "content-123"
 
     def test_snapshot_roundtrip(self) -> None:
-        ctx = PipelineContext(persona_id="persona-1", topic="Python")
+        ctx = PipelineContext(persona_name="persona-1", topic="Python")
         ctx.kb_context = "Some KB context"
         ctx.generated_content = "Generated draft"
         ctx.humanized_content = "Humanized draft"
@@ -108,7 +108,7 @@ class TestPipelineContext:
         restored = PipelineContext.from_snapshot(snapshot)
 
         assert restored.id == ctx.id
-        assert restored.persona_id == ctx.persona_id
+        assert restored.persona_name == ctx.persona_name
         assert restored.topic == ctx.topic
         assert restored.recipe_name == ctx.recipe_name
         assert restored.content_id == ctx.content_id
@@ -121,7 +121,7 @@ class TestPipelineContext:
 
     def test_snapshot_independence(self) -> None:
         """Verify that snapshot data is deep-copied and independent."""
-        ctx = PipelineContext(persona_id="p1", topic="T")
+        ctx = PipelineContext(persona_name="p1", topic="T")
         ctx.data["list"] = [1, 2, 3]
         snapshot = ctx.to_snapshot()
         # Modify original after snapshot
@@ -132,7 +132,7 @@ class TestPipelineContext:
     def test_from_snapshot_empty(self) -> None:
         """from_snapshot with empty dict should use defaults."""
         restored = PipelineContext.from_snapshot({})
-        assert restored.persona_id == ""
+        assert restored.persona_name == ""
         assert restored.topic == ""
         assert restored.recipe_name == "quick"
         assert restored.content_id is None
@@ -281,7 +281,7 @@ class TestOrchestrator:
 
         recipe = load_recipe_from_yaml(SAMPLE_RECIPE)
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
 
         result = await orchestrator.run(ctx, recipe)
 
@@ -308,7 +308,7 @@ class TestOrchestrator:
         ]
 
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
 
         result = await orchestrator.run(ctx, recipe)
 
@@ -338,7 +338,7 @@ stages:
         )
 
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
 
         result = await orchestrator.run(ctx, recipe)
 
@@ -387,7 +387,7 @@ stages:
         )
 
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
 
         result = await orchestrator.run(ctx, recipe)
 
@@ -412,7 +412,7 @@ stages:
         )
 
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
 
         result = await orchestrator.run(ctx, recipe)
 
@@ -432,7 +432,7 @@ stages: []
 """
         )
         orchestrator = PipelineOrchestrator(registry)
-        ctx = PipelineContext(persona_id="p1", topic="Python")
+        ctx = PipelineContext(persona_name="p1", topic="Python")
         result = await orchestrator.run(ctx, recipe)
         assert result.status == "completed"
         assert result.completed_at is not None

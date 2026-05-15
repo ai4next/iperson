@@ -90,15 +90,7 @@ class TestArticleGenerationPlugin:
         ctx.data["llm_client"] = DummyLLM(response="Test article content.")
         ctx.data["persona"] = {
             "name": "测试",
-            "language": "zh",
-            "system_prompt": "助手",
-            "tone_instruction": "",
-            "banned_patterns": [],
-            "keywords": [],
-            "focus_areas": [],
-            "content_types": [],
-            "few_shot_examples": [],
-            "style_profile": {},
+            "soul_content": "你是测试助手。",
         }
         result = await plugin.execute(ctx)
         assert result.generated_content == "Test article content."

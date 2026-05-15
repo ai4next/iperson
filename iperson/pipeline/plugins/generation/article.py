@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from iperson.core.generation.engine import GenerationEngine
+from iperson.core.persona.engine import PersonaEngine
 from iperson.core.persona.profile import PersonaProfile
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.plugin import StagePlugin
@@ -23,7 +24,7 @@ class ArticleGenerationPlugin(StagePlugin):
         """Generate article content using the GenerationEngine.
 
         Requires ``ctx.data["llm_client"]`` (a ``BaseChatModel`` instance) and
-        ``ctx.data["persona"]`` (a dict of persona fields).
+        either ``ctx.data["persona_engine"]`` or ``ctx.data["persona"]`` (dict).
 
         Sets ``ctx.generated_content`` and ``ctx.data["generation_messages"]``.
         """
@@ -37,8 +38,12 @@ class ArticleGenerationPlugin(StagePlugin):
             )
             return ctx
 
-        persona_data = ctx.data.get("persona", {})
-        persona = PersonaProfile(**persona_data)
+        # Resolve persona — prefer persona_engine, fall back to persona dict
+        persona_engine: PersonaEngine | None = ctx.data.get("persona_engine")
+        if persona_engine is None:
+            persona_data = ctx.data.get("persona", {})
+            persona = PersonaProfile(**persona_data)
+            persona_engine = PersonaEngine(persona)
 
         engine = GenerationEngine(llm)
 
@@ -48,7 +53,7 @@ class ArticleGenerationPlugin(StagePlugin):
             topic["summary"] = topic_summary
 
         result = await engine.generate(
-            persona, topic, kb_context=ctx.kb_context
+            persona_engine.persona, topic, kb_context=ctx.kb_context
         )
 
         ctx.generated_content = result["content"]
