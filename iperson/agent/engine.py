@@ -9,7 +9,7 @@ from typing import Any
 @dataclass
 class AgentRun:
     topic: str
-    recipe: str
+    pipeline: str
     persona: str
     status: str = "pending"
     content_id: str = ""
@@ -39,7 +39,7 @@ class DigitalTwinAgent:
 
         run = AgentRun(
             topic=topic,
-            recipe=self.default_pipeline,
+            pipeline=self.default_pipeline,
             persona=self.default_persona,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
