@@ -71,3 +71,22 @@ class TestSecurityWordlist:
         words = load_blocked_words()
         assert isinstance(words, list)
         assert "总的来说" in words
+
+
+class TestSeoAnalyzeHook:
+    @pytest.mark.asyncio
+    async def test_seo_analyze_generates_report(self) -> None:
+        from iperson.pipeline.hooks.seo_analyze import SeoAnalyzeHook
+
+        hook = SeoAnalyzeHook()
+        pctx = PipelineContext(topic="test")
+        pctx.generated_content = "# 标题\n\n这是一段正文内容，包含一些关键词。"
+        ctx = HookContext(
+            pipeline_ctx=pctx, hook_point="after.generation", config={}
+        )
+        result = await hook.execute(ctx)
+        assert "seo_report" in result.pipeline_ctx.data
+        report = result.pipeline_ctx.data["seo_report"]
+        assert "word_count" in report
+        assert "readability_score" in report
+        assert "suggestions" in report
