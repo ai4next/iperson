@@ -46,6 +46,9 @@ iperson = "iperson.cli.app:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+python-preference = "only-managed"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

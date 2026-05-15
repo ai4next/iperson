@@ -5,6 +5,14 @@ stages:
     config:
       top_k: 5
   - plugin: generation.article
+    hooks:
+      before:
+        - hook: intelligence.trending_inject
+          config: { source: zhihu }
+        - hook: safety.prompt_guard
+      after:
+        - hook: intelligence.seo_analyze
+        - hook: safety.content_scan
   - plugin: quality.humanizer
     config:
       min_score: 0.35
@@ -13,5 +21,11 @@ stages:
     config:
       on_fail: regenerate
   - plugin: publish.multiplatform
+    hooks:
+      before:
+        - hook: media.image_gen
+          config: { provider: openai, style: "flat illustration, warm tones", count: 2, cover: true }
+      after:
+        - hook: webhook.notify
     config:
       platforms: [xiaohongshu]

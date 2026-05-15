@@ -9,13 +9,13 @@ iPerson 是一个 **CLI 优先** 的个人 IP 内容引擎，通过插件化管�
 ### 安装
 
 ```bash
-# 通过 pip 安装
-pip install iperson
+# 通过 uv 安装
+uv pip install iperson
 
 # 或从源码安装
 git clone https://github.com/ai4next/iperson.git
 cd iperson
-pip install -e ".[all]"
+uv sync --all-extras
 ```
 
 ### 配置
@@ -32,8 +32,10 @@ llm:
   provider: openai         # 或 anthropic
   api_key: sk-xxx
   model: gpt-4o
-  embedding_model: text-embedding-3-small
+  embedding_model: text-embedding-3-small   # OpenAI: text-embedding-3-small / text-embedding-3-large / text-embedding-ada-002
 ```
+
+> **说明**：embedding 模型仅支持 OpenAI 系列（Anthropic 不提供 embedding 模型），即使 `provider` 设为 `anthropic`，embedding 仍走 OpenAI。可在 `~/.iperson/config.yaml` 中配置，或通过环境变量 `IPERSON_LLM_EMBEDDING_MODEL` 覆盖。
 
 也支持按阶段配置不同的 LLM 提供商和模型：
 
@@ -261,20 +263,20 @@ SQLite 数据库（`~/.iperson/data/iperson.db`）包含以下表：
 | 向量搜索 | NumPy + scikit-learn (BM25 + Embedding) |
 | 配置 | YAML + 环境变量覆盖 |
 | 测试 | pytest, pytest-asyncio |
-| 构建 | Hatchling |
+| 构建 | uv + Hatchling |
 
 ## 测试
 
 ```bash
 # 运行全部测试
-pytest
+uv run pytest
 
 # 带覆盖率报告
-pytest --cov=iperson
+uv run pytest --cov=iperson
 
 # 运行特定测试
-pytest tests/test_pipeline.py -v
-pytest tests/test_audit_gate.py -v
+uv run pytest tests/test_pipeline.py -v
+uv run pytest tests/test_audit_gate.py -v
 ```
 
 当前测试覆盖范围：管线编排（含 CircuitBreaker 熔断）、插件注册、Recipe 校验、知识库检索/分块/混合搜索、内容生成、人味化（检测/评分/改写）、人设引擎、质量审核门控（含加权评分）、LLM 路由、集成测试。
@@ -289,18 +291,18 @@ pytest tests/test_audit_gate.py -v
 ## 开发
 
 ```bash
-# 安装开发依赖
-pip install -e ".[dev]"
+# 安装开发依赖（含所有 extras）
+uv sync --all-extras
 
 # 运行测试
-pytest
+uv run pytest
 
 # 代码检查
-ruff check .
-mypy iperson/
+uv run ruff check .
+uv run mypy iperson/
 
 # 运行管线（dry-run 模式）
-iperson publish run --recipe quick --topic "示例选题" --verbose
+uv run iperson publish run --recipe quick --topic "示例选题" --verbose
 ```
 
 ## 项目结构

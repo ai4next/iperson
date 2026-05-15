@@ -589,3 +589,20 @@ class TestPipelineHooks:
         assert result.data.get("before_ran") is True
         assert result.data.get("stage_ran") is True
         assert result.data.get("after_ran") is True
+
+
+class TestRecipeHooks:
+    def test_recipe_can_include_hooks(self) -> None:
+        from iperson.pipeline.recipe import load_recipe_from_file
+        import os
+
+        recipe_path = os.path.join(
+            os.path.dirname(__file__), "..", "recipes", "quick.yaml"
+        )
+        recipe = load_recipe_from_file(recipe_path)
+        stages = recipe.get("stages", [])
+        gen_stage = next(
+            (s for s in stages if s["plugin"] == "generation.article"), None
+        )
+        assert gen_stage is not None
+        assert "hooks" not in gen_stage or isinstance(gen_stage["hooks"], dict)
