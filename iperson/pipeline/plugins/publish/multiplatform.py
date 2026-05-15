@@ -29,8 +29,8 @@ class MultiplatformPublishPlugin(StagePlugin):
     ) -> PipelineContext:
         """Write content to disk for each target platform.
 
-        Uses ``ctx.humanized_content`` if available, falls back to
-        ``ctx.generated_content``.
+        Uses ``ctx.platform_contents`` for per-platform content, falls back to
+        ``ctx.generated_content`` for missing platforms.
 
         Config:
             - ``platforms``: List of platform names (default ``["xiaohongshu"]``).
@@ -39,29 +39,21 @@ class MultiplatformPublishPlugin(StagePlugin):
             - ``ctx.publish_results``: List of per-platform publish records.
             - ``ctx.data["output_dir"]``: The output directory path.
         """
-        content = ctx.humanized_content or ctx.generated_content
-        if not content:
-            ctx.errors.append(
-                {
-                    "plugin": self.plugin_id,
-                    "error": "No content to publish",
-                }
-            )
-            return ctx
-
         merged = {**self.default_config, **(config or {})}
         platforms: list[str] = merged["platforms"]
 
         out_dir = create_output_dir(ctx.topic)
         ctx.data["output_dir"] = str(out_dir)
 
-        # Write core files
-        write_article(out_dir, content)
+        # Write core article
+        write_article(out_dir, ctx.generated_content)
         write_audit_report(out_dir, ctx.audit_result)
 
-        # Write platform-specific versions
+        # Write platform-specific content
         publish_results: list[dict[str, Any]] = []
         for platform in platforms:
+            # Use platform_contents if available, fall back to generated_content
+            content = ctx.platform_contents.get(platform, ctx.generated_content)
             platform_path = write_platform_content(out_dir, platform, content)
             publish_results.append(
                 {
