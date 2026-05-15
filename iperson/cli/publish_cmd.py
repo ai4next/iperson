@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import numpy as np
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -11,8 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from iperson.config import ensure_data_dirs
-from iperson.core.kb.embedder import OpenAIEmbedder
-from iperson.core.kb.vector_store import VectorStore
+from iperson.core.kb.bm25 import BM25Index
 from iperson.core.persona.engine import PersonaEngine
 from iperson.core.persona.profile import (
     PERSONAS_DIR,
@@ -22,7 +20,6 @@ from iperson.core.persona.profile import (
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.plugins import register_builtin_plugins
-from iperson.pipeline.pipeline import load_pipeline
 from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
@@ -41,18 +38,16 @@ console = Console()
 @publish_group.command()
 def run(
     topic: str = typer.Argument("", help="Content topic（可选，留空则自动选题）"),
-    pipeline: str = typer.Option("quick", "--pipeline", "-r", help="Pipeline name"),
     persona: str = typer.Option("", "--persona", "-p", help="Persona name"),
     platform: str = typer.Option("xiaohongshu", "--platform", help="Target platform"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed output"),
 ) -> None:
     """Run the content generation pipeline and publish."""
-    asyncio.run(_run_pipeline(topic, pipeline, persona, platform, verbose))
+    asyncio.run(_run_pipeline(topic, persona, platform, verbose))
 
 
 async def _run_pipeline(
     topic: str,
-    pipeline_name: str,
     persona_name: str,
     platform: str,
     verbose: bool,
@@ -65,14 +60,21 @@ async def _run_pipeline(
     # LLM client
     llm_client = get_llm("generation")
 
-    # Load pipeline
-    try:
-        pipeline_data = load_pipeline(pipeline_name)
-    except FileNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1) from e
+    # Load or create persona
+    persona_profile = load_persona(persona_name or "default")
+    if persona_profile is None:
+        if persona_name:
+            msg = (
+                f"[yellow]Warning:[/yellow] Persona '{persona_name}' "
+                f"not found at {PERSONAS_DIR / persona_name / 'soul.md'}, using defaults"
+            )
+            console.print(msg)
+        persona_profile = create_default_persona(persona_name or "default")
+
+    # Load pipeline from persona config
+    pipeline_data = persona_profile.pipeline
     if verbose:
-        console.print(f"[dim]Loaded pipeline:[/dim] {pipeline_data.get('name', pipeline_name)}")
+        console.print(f"[dim]Loaded pipeline from persona:[/dim] {persona_profile.name}")
 
     # Validate topic availability
     has_topic_selection = any(
@@ -85,17 +87,6 @@ async def _run_pipeline(
             "Either provide a topic argument or add a 'builtin.topic_selection' node to the pipeline."
         )
         raise typer.Exit(1)
-
-    # Load or create persona
-    persona_profile = load_persona(persona_name or "default")
-    if persona_profile is None:
-        if persona_name:
-            msg = (
-                f"[yellow]Warning:[/yellow] Persona '{persona_name}' "
-                f"not found at {PERSONAS_DIR / persona_name / 'soul.md'}, using defaults"
-            )
-            console.print(msg)
-        persona_profile = create_default_persona(persona_name or "default")
 
     persona_engine = PersonaEngine(persona_profile)
 
@@ -110,13 +101,12 @@ async def _run_pipeline(
     ctx = PipelineContext(
         persona_name=persona_profile.name,
         topic=topic,
-        pipeline_name=pipeline_name,
     )
     ctx.data["llm_client"] = llm_client
     ctx.data["persona_engine"] = persona_engine
     ctx.data["platform"] = platform
 
-    # Load KB context via vector search
+    # Load KB context via BM25 keyword search
     try:
         ctx = await _load_kb_context(ctx, topic)
     except Exception as e:
@@ -145,34 +135,28 @@ async def _run_pipeline(
 
 
 async def _load_kb_context(ctx: PipelineContext, topic: str) -> PipelineContext:
-    """Load relevant KB chunks via vector search or random sampling."""
+    """Load relevant KB chunks via BM25 keyword search or random sampling."""
     conn = get_connection()
     try:
         if topic:
-            # Vector search with topic query
+            # BM25 search with topic query
             rows = conn.execute(
-                """SELECT c.id, c.content, c.chunk_index, c.embedding, d.title as doc_title
+                """SELECT c.id, c.content, c.chunk_index, d.title as doc_title
                    FROM kb_chunks c
                    JOIN kb_docs d ON c.kb_doc_id = d.id
-                   WHERE c.embedding IS NOT NULL
                    ORDER BY c.created_at DESC"""
             ).fetchall()
 
             if not rows:
                 return ctx
 
-            vs = VectorStore()
-            for row in rows:
-                emb = np.frombuffer(row["embedding"], dtype=np.float64).tolist()
-                vs.add(emb, {
-                    "text": row["content"],
-                    "metadata": {},
-                    "doc_title": row["doc_title"],
-                })
-
-            embedder = OpenAIEmbedder()
-            query_vector = await embedder.embed(topic)
-            results = vs.search(query_vector, top_k=5)
+            docs = [
+                {"id": row["id"], "text": row["content"], "doc_title": row["doc_title"]}
+                for row in rows
+            ]
+            bm25 = BM25Index()
+            bm25.add_documents(docs)
+            results = bm25.search(topic, top_k=5)
             ctx.kb_chunks = results
         else:
             # No topic: random sampling for topic selection

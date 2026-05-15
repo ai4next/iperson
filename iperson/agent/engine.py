@@ -9,7 +9,6 @@ from typing import Any
 @dataclass
 class AgentRun:
     topic: str
-    pipeline: str
     persona: str
     status: str = "pending"
     content_id: str = ""
@@ -23,23 +22,21 @@ class DigitalTwinAgent:
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
-        self.default_pipeline = self.config.get("pipeline", "quick")
         self.default_persona = self.config.get("persona", "default")
 
     async def run_once(self, topic: str) -> AgentRun:
         """Run a single end-to-end content cycle."""
         from iperson.config import ensure_data_dirs
+        from iperson.core.persona.profile import load_persona
         from iperson.pipeline.context import PipelineContext
         from iperson.pipeline.orchestrator import PipelineOrchestrator
         from iperson.pipeline.plugins import register_builtin_plugins
-        from iperson.pipeline.pipeline import load_pipeline
         from iperson.pipeline.registry import PluginRegistry
         from iperson.storage import init_db
         from iperson.utils.llm import get_llm
 
         run = AgentRun(
             topic=topic,
-            pipeline=self.default_pipeline,
             persona=self.default_persona,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
@@ -49,12 +46,14 @@ class DigitalTwinAgent:
             init_db()
 
             llm_client = get_llm("generation")
-            pipeline_data = load_pipeline(self.default_pipeline)
+
+            persona_profile = load_persona(self.default_persona)
+            pipeline_data = persona_profile.pipeline if persona_profile else {"nodes": []}
 
             registry = PluginRegistry()
             register_builtin_plugins(registry)
 
-            ctx = PipelineContext(topic=topic, pipeline_name=self.default_pipeline)
+            ctx = PipelineContext(topic=topic)
             ctx.data["llm_client"] = llm_client
             ctx.data["platform"] = self.config.get("platform", "xiaohongshu")
 

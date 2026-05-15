@@ -13,13 +13,11 @@ class PipelineContext:
         self,
         persona_name: str = "",
         topic: str = "",
-        pipeline_name: str = "quick",
         content_id: str | None = None,
     ) -> None:
         self.id: str = uuid.uuid4().hex
         self.persona_name: str = persona_name
         self.topic: str = topic
-        self.pipeline_name: str = pipeline_name
         self.content_id: str | None = content_id
         self.status: str = "running"
 
@@ -44,7 +42,6 @@ class PipelineContext:
             "id": self.id,
             "persona_name": self.persona_name,
             "topic": self.topic,
-            "pipeline_name": self.pipeline_name,
             "content_id": self.content_id,
             "status": self.status,
             "kb_chunks": deepcopy(self.kb_chunks),
@@ -64,7 +61,6 @@ class PipelineContext:
         ctx = cls(
             persona_name=snapshot.get("persona_name", ""),
             topic=snapshot.get("topic", ""),
-            pipeline_name=snapshot.get("pipeline_name", "quick"),
             content_id=snapshot.get("content_id"),
         )
         ctx.id = snapshot.get("id", ctx.id)

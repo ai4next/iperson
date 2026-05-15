@@ -1,6 +1,6 @@
 # iPerson — 通用全自动个人IP运营平台
 
-> **AI辅助 · 人主导** — 用AI放大创作者的人格，而非替代它
+> 用AI放大创作者的人格，而非替代它
 
 iPerson 是一个 **CLI 优先** 的个人 IP 内容引擎，通过插件化管线编排内容生产流程，支持知识库驱动的内容生成、多维度质量审核、人设风格控制，以及多平台发布。
 
@@ -34,10 +34,7 @@ llm:
   provider: openai              # 或 anthropic / gemini
   api_key: sk-xxx               # 你的 API Key
   model: gpt-4o                 # 生成模型
-  embedding_model: text-embedding-3-small   # 仅 OpenAI 系列
 ```
-
-> **说明**：embedding 模型仅支持 OpenAI 系列（Anthropic 不提供 embedding 模型），即使 `provider` 设为 `anthropic`，embedding 仍走 OpenAI。
 
 ### 首次运行
 
@@ -71,7 +68,6 @@ llm:
   provider: openai              # openai / anthropic / gemini
   api_key: sk-xxx
   model: gpt-4o
-  embedding_model: text-embedding-3-small
 
 # 按阶段独立配置 LLM（覆盖全局配置）
 providers:
@@ -101,7 +97,6 @@ webhooks:
 ```bash
 export IPERSON_LLM_API_KEY=sk-xxx
 export IPERSON_LLM_MODEL=gpt-4o
-export IPERSON_LLM_EMBEDDING_MODEL=text-embedding-3-large
 export IPERSON_DB_PATH=/custom/path/iperson.db
 ```
 
@@ -126,67 +121,55 @@ export IPERSON_DB_PATH=/custom/path/iperson.db
 
 ### 什么是 Pipeline？
 
-Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的节点顺序和每个节点的配置。Topic Selection 作为内置节点参与编排。
+Pipeline（管线）定义内容生产的节点顺序和每个节点的配置。每个**人设**都有自己的 Pipeline 配置，放在人设目录的 `config.yaml` 中。
 
-### 内置 Pipeline
+### 默认 Pipeline
 
-| Pipeline | 节点数 | 默认平台 |
-|----------|--------|----------|
-| `default` | 4 | 小红书 + 微信 + 知乎 |
+未配置时使用内置默认管线：素材检索 → 自动选题 → 内容生成 → 多平台发布。
 
-差异化通过 hook 配置实现（如调整目标平台、humanizer 参数等）。
+### Pipeline 配置
 
-### Pipeline 完整语法
+在人设的 `config.yaml` 中添加 `pipeline` 字段即可自定义：
 
 ```yaml
-name: "default"
-description: "通用内容管线"
-nodes:
-  - id: research
-    node: research.kb_retrieve
-    config:
-      top_k: 10                             # 拉取素材条数
+# ~/.iperson/personas/{name}/config.yaml
+is_active: true
+pipeline:
+  nodes:
+    - id: research
+      node: research.kb_retrieve
+      config:
+        top_k: 10
 
-  - id: generate
-    node: generation.article
-    hooks:                                  # 可选：节点钩子
-      before:
-        - hook: intelligence.trending_inject
-          config: { source: zhihu }
-        - hook: safety.prompt_guard
-      after:
-        - hook: quality.humanizer
-          config:
-            min_score: 0.35
-            max_iterations: 2
-        - hook: intelligence.seo_analyze
-        - hook: safety.content_scan
+    - id: generate
+      node: generation.article
+      hooks:
+        after:
+          - hook: quality.humanizer
+            config:
+              min_score: 0.35
+              max_iterations: 2
 
-  - id: publish
-    node: publish.multiplatform
-    hooks:
-      before:
-        - hook: quality.platformize
-          config:
-            platforms: [xiaohongshu, wechat, zhihu]
-        - hook: media.image_gen
-          config: { provider: openai, style: "flat illustration, warm tones", count: 2, cover: true }
-      after:
-        - hook: webhook.notify
-    config:
-      platforms: [xiaohongshu, wechat, zhihu]
+    - id: publish
+      node: publish.multiplatform
+      hooks:
+        before:
+          - hook: quality.platformize
+            config:
+              platforms: [xiaohongshu, wechat, zhihu]
+      config:
+        platforms: [xiaohongshu, wechat, zhihu]
 ```
 
-### 自定义 Pipeline
+每个节点支持的字段：
 
-将 YAML 文件放入 `~/.iperson/data/pipelines/` 即可：
-
-```bash
-mkdir -p ~/.iperson/data/pipelines
-vim ~/.iperson/data/pipelines/my-pipeline.yaml
-```
-
-然后通过 `--pipeline my-pipeline` 引用。
+| 字段 | 说明 |
+|------|------|
+| `id` | 节点唯一标识 |
+| `node` | 节点插件 ID（如 `research.kb_retrieve`） |
+| `config` | 节点配置参数 |
+| `hooks.before` | 执行前钩子列表 |
+| `hooks.after` | 执行后钩子列表 |
 
 ---
 
@@ -365,7 +348,6 @@ stages:
 
 ```bash
 iperson publish run [TOPIC]                  # 内容主题（可选，留空则自动选题）
-  --pipeline, -r  <name>                     # Pipeline 名称，默认 "default"
   --persona, -p    <name>                    # 人设名称
   --platform       <name>                    # 目标平台，默认 "xiaohongshu"
   --verbose                                  # 显示详细输出（含插件注册、阶段耗时、内容预览等）
@@ -465,11 +447,11 @@ nodes:
 
 ### 知识库 (`iperson kb`)
 
-基于 SQLite 的轻量级知识库，支持混合检索（BM25 + Embedding 向量搜索）：
+基于 SQLite 的轻量级知识库，支持 BM25 全文检索：
 
-- `kb import <path>` — 导入文档（支持 `.txt`, `.md`, `.py` 等），自动分块与向量化
-- `kb search <query>` — 混合检索知识库（BM25 全文搜索 + Embedding 语义搜索融合）
-- 底层组件：`chunker`（文本分块）、`loader`（文件加载）、`embedder`（向量化）、`bm25`（全文索引）、`vector_store`（向量存储）
+- `kb import <path>` — 导入文档（支持 `.txt`, `.md`, `.py` 等），自动分块与索引
+- `kb search <query>` — 检索知识库（BM25 全文搜索）
+- 底层组件：`chunker`（文本分块）、`loader`（文件加载）、`bm25`（全文索引）
 
 ### 人设引擎 (`iperson persona`)
 
@@ -581,7 +563,7 @@ SQLite 数据库（`~/.iperson/data/iperson.db`）包含以下表：
 | `contents` | 内容记录（含草稿、终稿、审核分数） |
 | `publications` | 发布记录（平台、状态、时间） |
 | `kb_docs` | 知识库文档 |
-| `kb_chunks` | 文档分块（含向量 Embedding） |
+| `kb_chunks` | 文档分块 |
 | `content_metrics` | 内容表现数据（阅读/点赞/分享/评论） |
 
 ## 技术栈
@@ -592,7 +574,7 @@ SQLite 数据库（`~/.iperson/data/iperson.db`）包含以下表：
 | CLI 框架 | Typer + Rich |
 | 存储 | SQLite (Pydantic 模型) |
 | AI | LangChain (OpenAI / Anthropic / Gemini) |
-| 向量搜索 | NumPy + scikit-learn (BM25 + Embedding) |
+| 搜索 | BM25 全文搜索 |
 | 配置 | YAML + 环境变量覆盖 |
 | 测试 | pytest, pytest-asyncio |
 | 构建 | uv + Hatchling |
@@ -613,13 +595,6 @@ uv run pytest tests/test_audit_gate.py -v
 
 当前测试覆盖范围：管线编排（含 CircuitBreaker 熔断）、插件注册、Pipeline 校验、知识库检索/分块/混合搜索、内容生成、人味化（检测/评分/改写）、人设引擎、自动选题、质量审核门控（含加权评分）、LLM 路由、集成测试。
 
-## 路线图
-
-- **Phase 1** (已完成): CLI MVP + 插件化管线 + 知识库 RAG + 质量审核 + 人味化
-- **Phase 2** (已完成): Pipeline 弹性（CircuitBreaker + 错误恢复）+ Humanizer 质量提升 + 审核精准度优化 + Gemini 支持 + 管线加固
-- **Phase 3** (已完成): 分析引擎（内容表现追踪）+ 平台 API 适配器（知乎/微博/抖音）+ 数据驱动优化
-- **Phase 4** (已完成): 自动选题（KB + 分析数据）+ 数字分身 Agent（自主内容生成）+ 风格微调（AI模式分析 + 性能反馈调优）
-
 ## 开发
 
 ```bash
@@ -636,8 +611,8 @@ uv run mypy iperson/
 # 运行管线（自动选题模式）
 uv run iperson publish run --verbose
 
-# 或指定选题和管线
-uv run iperson publish run "示例选题" --pipeline default --verbose
+# 或指定选题
+uv run iperson publish run "示例选题" --verbose
 ```
 
 ## 项目结构
@@ -645,8 +620,6 @@ uv run iperson publish run "示例选题" --pipeline default --verbose
 ```
 iperson/
 ├── pyproject.toml              # 项目元数据与依赖
-├── pipelines/                   # 内置 Pipeline YAML
-│   └── default.yaml
 ├── tests/                      # 测试套件（22 个测试文件）
 ├── iperson/
 │   ├── cli/                    # CLI 入口

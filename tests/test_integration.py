@@ -8,27 +8,20 @@ import pytest
 
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
-from iperson.pipeline.pipeline import load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.plugins import register_builtin_plugins
 from iperson.core.persona.engine import PersonaEngine
 from iperson.core.persona.profile import PersonaProfile
 from iperson.utils.llm import DummyLLM
 
-QUICK_RECIPE = """
-name: quick-test
-nodes:
-  - id: research
-    node: research.kb_retrieve
-    config:
-      top_k: 3
-  - id: generate
-    node: generation.article
-  - id: publish
-    node: publish.multiplatform
-    config:
-      platforms: [xiaohongshu]
-"""
+QUICK_RECIPE = {
+    "name": "quick-test",
+    "nodes": [
+        {"id": "research", "node": "research.kb_retrieve", "config": {"top_k": 3}},
+        {"id": "generate", "node": "generation.article"},
+        {"id": "publish", "node": "publish.multiplatform", "config": {"platforms": ["xiaohongshu"]}},
+    ],
+}
 
 
 def _make_persona(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -51,7 +44,7 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_pipeline_from_yaml(QUICK_RECIPE)
+        recipe = QUICK_RECIPE
 
         ctx = PipelineContext(persona_name="test", topic="RAG技术入门")
         ctx.data["llm_client"] = DummyLLM(
@@ -78,7 +71,7 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_pipeline_from_yaml(QUICK_RECIPE)
+        recipe = QUICK_RECIPE
 
         ctx = PipelineContext(persona_name="test", topic="通用话题")
         ctx.data["llm_client"] = DummyLLM(response="Some content.")
@@ -95,13 +88,13 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_pipeline_from_yaml("""
-name: topic-selection-test
-topic_selection: true
-nodes:
-  - id: generate
-    node: generation.article
-""")
+        recipe = {
+            "name": "topic-selection-test",
+            "topic_selection": True,
+            "nodes": [
+                {"id": "generate", "node": "generation.article"},
+            ],
+        }
         ctx = PipelineContext(persona_name="test", topic="")
         ctx.data["llm_client"] = DummyLLM(response="测试生成内容")
         ctx.data["platform"] = "xiaohongshu"

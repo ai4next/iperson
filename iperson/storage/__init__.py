@@ -73,32 +73,5 @@ def init_db() -> None:
             );
         """)
         conn.commit()
-
-        # Migration: add new columns to publications table if missing
-        for col, col_type in [
-            ("scheduled_at", "TEXT"),
-            ("retry_count", "INTEGER DEFAULT 0"),
-            ("error_message", "TEXT DEFAULT ''"),
-        ]:
-            try:
-                conn.execute(f"ALTER TABLE publications ADD COLUMN {col} {col_type}")
-                conn.commit()
-            except Exception:
-                pass
-
-        # Migration: add pipeline_name column to contents table
-        try:
-            conn.execute("ALTER TABLE contents ADD COLUMN pipeline_name TEXT")
-            conn.execute("UPDATE contents SET pipeline_name = recipe_name WHERE pipeline_name IS NULL")
-            conn.commit()
-        except Exception:
-            pass
-
-        # Migration: drop embedding column from kb_chunks if it exists (SQLite 3.35+)
-        try:
-            conn.execute("ALTER TABLE kb_chunks DROP COLUMN embedding")
-            conn.commit()
-        except Exception:
-            pass
     finally:
         conn.close()

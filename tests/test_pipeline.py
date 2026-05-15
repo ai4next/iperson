@@ -7,20 +7,7 @@ import pytest
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.plugin import StagePlugin
-from iperson.pipeline.pipeline import load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
-
-SAMPLE_RECIPE = """
-name: test-recipe
-description: "Test recipe"
-nodes:
-  - id: stage_one
-    node: test.stage_one
-    config:
-      key: value
-  - id: stage_two
-    node: test.stage_two
-"""
 
 
 class StageOne(StagePlugin):
@@ -70,7 +57,6 @@ class TestPipelineContext:
         ctx = PipelineContext(persona_name="persona-1", topic="Python")
         assert ctx.persona_name == "persona-1"
         assert ctx.topic == "Python"
-        assert ctx.pipeline_name == "quick"
         assert ctx.status == "running"
         assert ctx.content_id is None
         assert ctx.kb_chunks == []
@@ -87,12 +73,10 @@ class TestPipelineContext:
         ctx = PipelineContext(
             persona_name="persona-2",
             topic="Go",
-            pipeline_name="full",
             content_id="content-123",
         )
         assert ctx.persona_name == "persona-2"
         assert ctx.topic == "Go"
-        assert ctx.pipeline_name == "full"
         assert ctx.content_id == "content-123"
 
     def test_snapshot_roundtrip(self) -> None:
@@ -109,7 +93,6 @@ class TestPipelineContext:
         assert restored.id == ctx.id
         assert restored.persona_name == ctx.persona_name
         assert restored.topic == ctx.topic
-        assert restored.pipeline_name == ctx.pipeline_name
         assert restored.content_id == ctx.content_id
         assert restored.status == ctx.status
         assert restored.kb_context == ctx.kb_context
@@ -132,7 +115,6 @@ class TestPipelineContext:
         restored = PipelineContext.from_snapshot({})
         assert restored.persona_name == ""
         assert restored.topic == ""
-        assert restored.pipeline_name == "quick"
         assert restored.content_id is None
         assert restored.status == "running"
 
@@ -209,69 +191,6 @@ class TestPluginRegistry:
         assert registry.has("test.stage_one")
 
 
-class TestRecipe:
-    def test_load_pipeline_from_yaml(self) -> None:
-        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
-        assert recipe["name"] == "test-recipe"
-        assert recipe["description"] == "Test recipe"
-        assert len(recipe["nodes"]) == 2
-
-        node0 = recipe["nodes"][0]
-        assert node0["node"] == "test.stage_one"
-        assert node0["config"] == {"key": "value"}
-
-        node1 = recipe["nodes"][1]
-        assert node1["node"] == "test.stage_two"
-
-    def test_load_recipe_without_config(self) -> None:
-        yaml_str = """
-name: minimal
-nodes:
-  - id: step
-    node: my.plugin
-"""
-        recipe = load_pipeline_from_yaml(yaml_str)
-        assert recipe["nodes"][0]["config"] == {}
-
-    def test_load_recipe_no_stages(self) -> None:
-        yaml_str = """
-name: empty-recipe
-description: "No stages"
-"""
-        recipe = load_pipeline_from_yaml(yaml_str)
-        assert recipe["name"] == "empty-recipe"
-        assert recipe["nodes"] == []
-
-    def test_load_recipe_missing_name(self) -> None:
-        yaml_str = """
-nodes:
-  - id: step
-    node: test
-"""
-        with pytest.raises(ValueError, match="name"):
-            load_pipeline_from_yaml(yaml_str)
-
-    def test_load_recipe_missing_plugin_field(self) -> None:
-        yaml_str = """
-name: bad
-nodes:
-  - id: step
-    config:
-      foo: bar
-"""
-        with pytest.raises(ValueError, match="node"):
-            load_pipeline_from_yaml(yaml_str)
-
-    def test_load_recipe_not_a_mapping(self) -> None:
-        with pytest.raises(ValueError, match="mapping"):
-            load_pipeline_from_yaml("hello")
-
-    def test_load_recipe_from_file_not_found(self) -> None:
-        from iperson.pipeline.pipeline import load_pipeline_from_file
-
-        with pytest.raises(FileNotFoundError, match="not found"):
-            load_pipeline_from_file("/nonexistent/recipe.yaml")
-
 
 class TestOrchestrator:
     @pytest.mark.asyncio
@@ -280,7 +199,13 @@ class TestOrchestrator:
         registry.register(StageOne)
         registry.register(StageTwo)
 
-        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
+        recipe = {
+            "name": "test-recipe",
+            "nodes": [
+                {"id": "stage_one", "node": "test.stage_one", "config": {"key": "value"}},
+                {"id": "stage_two", "node": "test.stage_two"},
+            ],
+        }
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
@@ -298,7 +223,13 @@ class TestOrchestrator:
         registry.register(FailingStage)
         registry.register(StageTwo)
 
-        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
+        recipe = {
+            "name": "test-recipe",
+            "nodes": [
+                {"id": "stage_one", "node": "test.stage_one", "config": {"key": "value"}},
+                {"id": "stage_two", "node": "test.stage_two"},
+            ],
+        }
         # Replace stage_two with failing stage
         recipe["nodes"] = [
             {"id": "stage_one", "node": "test.stage_one", "config": {}},
@@ -317,18 +248,14 @@ class TestOrchestrator:
         registry = PluginRegistry()
         registry.register(StageOne)
 
-        recipe = load_pipeline_from_yaml(
-            """
-name: unknown-plugin
-nodes:
-  - id: stage_one
-    node: test.stage_one
-  - id: unknown
-    node: nonexistent.plugin
-  - id: stage_two
-    node: test.stage_two
-"""
-        )
+        recipe = {
+            "name": "unknown-plugin",
+            "nodes": [
+                {"id": "stage_one", "node": "test.stage_one"},
+                {"id": "unknown", "node": "nonexistent.plugin"},
+                {"id": "stage_two", "node": "test.stage_two"},
+            ],
+        }
 
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
@@ -363,16 +290,12 @@ nodes:
         registry = PluginRegistry()
         registry.register(RetryStage)
 
-        recipe = load_pipeline_from_yaml(
-            """
-name: retry-test
-nodes:
-  - id: retry
-    node: test.retry
-    config:
-      max_retries: 2
-"""
-        )
+        recipe = {
+            "name": "retry-test",
+            "nodes": [
+                {"id": "retry", "node": "test.retry", "config": {"max_retries": 2}},
+            ],
+        }
 
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
@@ -385,16 +308,12 @@ nodes:
         registry = PluginRegistry()
         registry.register(FailingStage)
 
-        recipe = load_pipeline_from_yaml(
-            """
-name: retry-fail
-nodes:
-  - id: failing
-    node: test.failing
-    config:
-      max_retries: 1
-"""
-        )
+        recipe = {
+            "name": "retry-fail",
+            "nodes": [
+                {"id": "failing", "node": "test.failing", "config": {"max_retries": 1}},
+            ],
+        }
 
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
@@ -405,12 +324,10 @@ nodes:
     @pytest.mark.asyncio
     async def test_orchestrator_empty_stages(self) -> None:
         registry = PluginRegistry()
-        recipe = load_pipeline_from_yaml(
-            """
-name: empty
-nodes: []
-"""
-        )
+        recipe = {
+            "name": "empty",
+            "nodes": [],
+        }
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
         result = await orchestrator.run(ctx, recipe)
@@ -566,19 +483,3 @@ class TestPipelineHooks:
         assert result.data.get("stage_ran") is True
         assert result.data.get("after_ran") is True
 
-
-class TestRecipeHooks:
-    def test_recipe_can_include_hooks(self) -> None:
-        from iperson.pipeline.pipeline import load_pipeline_from_file
-        import os
-
-        recipe_path = os.path.join(
-            os.path.dirname(__file__), "..", "pipelines", "default.yaml"
-        )
-        recipe = load_pipeline_from_file(recipe_path)
-        nodes = recipe.get("nodes", [])
-        gen_node = next(
-            (n for n in nodes if n["node"] == "generation.article"), None
-        )
-        assert gen_node is not None
-        assert "hooks" not in gen_node or isinstance(gen_node["hooks"], dict)

@@ -153,7 +153,6 @@ class TestStorage:
             content="Python is great",
         )
         assert record.chunk_index == 0
-        assert record.embedding is None
 
 
 class TestDummyLLM:
@@ -173,42 +172,6 @@ class TestDummyLLM:
         result1 = await dummy_llm.ainvoke([HumanMessage(content="Hello")])
         result2 = await dummy_llm.ainvoke([HumanMessage(content="World")])
         assert result1.content != result2.content
-
-    @pytest.mark.asyncio
-    async def test_generate_embedding_returns_1536_dims(self) -> None:
-        from iperson.utils.llm import DummyEmbeddings
-
-        emb = DummyEmbeddings()
-        result = await emb.aembed_query("test text")
-        assert len(result) == 1536
-
-    @pytest.mark.asyncio
-    async def test_generate_embedding_deterministic(self) -> None:
-        from iperson.utils.llm import DummyEmbeddings
-
-        emb = DummyEmbeddings()
-        emb1 = await emb.aembed_query("test text")
-        emb2 = await emb.aembed_query("test text")
-        assert emb1 == emb2
-
-    @pytest.mark.asyncio
-    async def test_generate_embedding_empty_text(self) -> None:
-        from iperson.utils.llm import DummyEmbeddings
-
-        emb = DummyEmbeddings()
-        result = await emb.aembed_query("")
-        assert all(v == 0.0 for v in result)
-
-    @pytest.mark.asyncio
-    async def test_generate_embeddings_batch(self) -> None:
-        from iperson.utils.llm import DummyEmbeddings
-
-        emb = DummyEmbeddings()
-        texts = ["hello", "world", "test"]
-        embs = await emb.aembed_documents(texts)
-        assert len(embs) == 3
-        assert all(len(e) == 1536 for e in embs)
-        assert embs[0] == await emb.aembed_query("hello")
 
 
 class TestOutput:

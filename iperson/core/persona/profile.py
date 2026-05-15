@@ -7,10 +7,64 @@ from typing import Any
 import yaml
 
 PERSONAS_DIR = Path("~/.iperson/personas").expanduser()
+GLOBAL_CONFIG_PATH = PERSONAS_DIR / "config.yaml"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "is_active": True,
+    "pipeline": {
+        "nodes": [
+            {"id": "research", "node": "research.kb_retrieve", "config": {"top_k": 10}},
+            {"id": "topic_selection", "node": "builtin.topic_selection"},
+            {
+                "id": "generate",
+                "node": "generation.article",
+                "hooks": {
+                    "after": [
+                        {"hook": "quality.humanizer", "config": {"min_score": 0.35, "max_iterations": 2}}
+                    ]
+                },
+            },
+            {
+                "id": "publish",
+                "node": "publish.multiplatform",
+                "hooks": {
+                    "before": [
+                        {"hook": "quality.platformize", "config": {"platforms": ["xiaohongshu", "wechat", "zhihu"]}}
+                    ]
+                },
+                "config": {"platforms": ["xiaohongshu", "wechat", "zhihu"]},
+            },
+        ],
+    },
 }
+
+
+def load_global_config() -> dict[str, Any]:
+    """Load the global persona config from ``{PERSONAS_DIR}/config.yaml``.
+
+    Returns DEFAULT_CONFIG if the file does not exist.
+    """
+    if not GLOBAL_CONFIG_PATH.exists():
+        return dict(DEFAULT_CONFIG)
+    with open(GLOBAL_CONFIG_PATH) as f:
+        return yaml.safe_load(f) or {}
+
+
+def ensure_global_config() -> dict[str, Any]:
+    """Load or create the global persona config.
+
+    If ``{PERSONAS_DIR}/config.yaml`` does not exist, writes DEFAULT_CONFIG
+    to disk first, so the user can see and edit it.
+    """
+    if GLOBAL_CONFIG_PATH.exists():
+        with open(GLOBAL_CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+
+    GLOBAL_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cfg = dict(DEFAULT_CONFIG)
+    with open(GLOBAL_CONFIG_PATH, "w") as f:
+        yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    return cfg
 
 
 class PersonaProfile:
@@ -21,6 +75,7 @@ class PersonaProfile:
         self.name: str = kwargs.get("name", "default")
         self.soul_content: str = kwargs.get("soul_content", "")
         self.config: dict[str, Any] = kwargs.get("config", dict(DEFAULT_CONFIG))
+        self.pipeline: dict[str, Any] = kwargs.get("pipeline", self.config.pop("pipeline", {}))
 
 
 def _config_path(name: str) -> Path:
@@ -41,13 +96,16 @@ def load_persona(name: str) -> PersonaProfile | None:
         return None
     soul_content = soul_path.read_text(encoding="utf-8")
 
-    cfg = dict(DEFAULT_CONFIG)
+    cfg = ensure_global_config()
     config_path = _config_path(name)
     if config_path.exists():
         with open(config_path) as f:
-            cfg.update(yaml.safe_load(f) or {})
+            raw = yaml.safe_load(f) or {}
+            cfg.update(raw)
 
-    return PersonaProfile(name=name, soul_content=soul_content, config=cfg)
+    pipeline = cfg.pop("pipeline", {})
+
+    return PersonaProfile(name=name, soul_content=soul_content, config=cfg, pipeline=pipeline)
 
 
 def save_persona(persona: PersonaProfile) -> Path:
@@ -59,14 +117,20 @@ def save_persona(persona: PersonaProfile) -> Path:
     soul_path.write_text(persona.soul_content, encoding="utf-8")
 
     config_path = persona_dir / "config.yaml"
+    output = dict(persona.config)
+    output["pipeline"] = persona.pipeline
     with open(config_path, "w") as f:
-        yaml.dump(persona.config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        yaml.dump(output, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     return soul_path
 
 
 def create_default_persona(name: str = "default") -> PersonaProfile:
-    """Create a PersonaProfile with a default soul template."""
+    """Create a PersonaProfile with a default soul template.
+
+    Uses the global ``{PERSONAS_DIR}/config.yaml`` as the base config if it exists,
+    otherwise falls back to the built-in DEFAULT_CONFIG.
+    """
     soul = f"""# {name} 的人设灵魂
 
 ## 基本定位
@@ -82,7 +146,9 @@ def create_default_persona(name: str = "default") -> PersonaProfile:
 - 多用短句，段落不超过 5 行
 - 避免 AI 套话
 """
-    return PersonaProfile(name=name, soul_content=soul, config=dict(DEFAULT_CONFIG))
+    cfg = ensure_global_config()
+    pipeline = cfg.pop("pipeline", {})
+    return PersonaProfile(name=name, soul_content=soul, config=cfg, pipeline=pipeline)
 
 
 def list_personas() -> list[str]:

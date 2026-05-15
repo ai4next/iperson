@@ -17,6 +17,9 @@ class ArticleGenerationPlugin(StagePlugin):
     description: str = "Generate article content from persona, topic, and KB context"
     category: str = "generation"
     version: str = "1.0.0"
+    default_config: dict[str, Any] = {
+        "use_research_agent": True,
+    }
 
     async def execute(
         self, ctx: PipelineContext, config: dict[str, Any] | None = None
@@ -52,8 +55,29 @@ class ArticleGenerationPlugin(StagePlugin):
         if topic_summary:
             topic["summary"] = topic_summary
 
+        # Research agent: enhance context with KB + web search
+        use_agent = (config or {}).get("use_research_agent", True)
+        enhanced_context = ctx.kb_context
+
+        if use_agent and ctx.topic:
+            try:
+                from iperson.core.agent.research_agent import ResearchAgent
+
+                agent = ResearchAgent(llm)
+                enhanced_context = await agent.research(
+                    ctx.topic, kb_context=ctx.kb_context
+                )
+            except Exception as e:
+                ctx.errors.append(
+                    {
+                        "plugin": self.plugin_id,
+                        "error": f"Research agent failed: {e}, using KB context only",
+                    }
+                )
+                enhanced_context = ctx.kb_context
+
         result = await engine.generate(
-            persona_engine.persona, topic, kb_context=ctx.kb_context
+            persona_engine.persona, topic, kb_context=enhanced_context
         )
 
         ctx.generated_content = result["content"]
