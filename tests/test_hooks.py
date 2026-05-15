@@ -90,3 +90,33 @@ class TestSeoAnalyzeHook:
         assert "word_count" in report
         assert "readability_score" in report
         assert "suggestions" in report
+
+
+class TestImageGenHook:
+    @pytest.mark.asyncio
+    async def test_image_gen_skips_without_content(self) -> None:
+        from iperson.pipeline.hooks.image_gen import ImageGenHook
+
+        hook = ImageGenHook()
+        pctx = PipelineContext(topic="test")
+        ctx = HookContext(
+            pipeline_ctx=pctx, hook_point="before.publish", config={}
+        )
+        result = await hook.execute(ctx)
+        assert result.pipeline_ctx.data.get("images_generated") is False
+
+
+class TestImageSchemas:
+    def test_generated_image_dataclass(self) -> None:
+        from iperson.core.media.schemas import GeneratedImage
+        from pathlib import Path
+
+        img = GeneratedImage(
+            path=Path("/tmp/test.png"),
+            prompt="a cat",
+            alt_text="A cute cat",
+            is_cover=False,
+            position=1,
+        )
+        assert img.path.name == "test.png"
+        assert img.prompt == "a cat"
