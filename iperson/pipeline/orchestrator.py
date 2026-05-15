@@ -15,6 +15,7 @@ from iperson.pipeline.plugin import StagePlugin
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.hook import HookRegistry
 from iperson.pipeline.hook_orchestrator import HookOrchestrator
+from iperson.core.persona.engine import PersonaEngine
 
 
 class PipelineOrchestrator:
@@ -34,6 +35,69 @@ class PipelineOrchestrator:
             cb_config = CircuitBreakerConfig()
             self.circuit_breakers[plugin_id] = CircuitBreaker(cb_config)
         return self.circuit_breakers[plugin_id]
+
+    async def _auto_select_topic(self, ctx: PipelineContext, pipeline: dict[str, Any]) -> PipelineContext:
+        """Select a topic from KB context using persona and LLM."""
+        if not ctx.kb_context:
+            ctx.errors.append(PipelineError(
+                error_code="TOPIC_SELECTION_FAILED",
+                stage="topic_selection",
+                message="No KB context available for topic selection. Import KB docs first.",
+                recoverable=False,
+            ))
+            ctx.status = "completed_with_errors"
+            return ctx
+
+        persona_engine: PersonaEngine | None = ctx.data.get("persona_engine")
+        if persona_engine is None:
+            ctx.errors.append(PipelineError(
+                error_code="TOPIC_SELECTION_FAILED",
+                stage="topic_selection",
+                message="No persona engine found in context for topic selection.",
+                recoverable=False,
+            ))
+            ctx.status = "completed_with_errors"
+            return ctx
+
+        llm = ctx.data.get("llm_client")
+        if llm is None:
+            ctx.errors.append(PipelineError(
+                error_code="TOPIC_SELECTION_FAILED",
+                stage="topic_selection",
+                message="No LLM client available for topic selection.",
+                recoverable=False,
+            ))
+            ctx.status = "completed_with_errors"
+            return ctx
+
+        prompt = (
+            f"你是一位内容选题助手。以下是人设信息：\n"
+            f"---\n"
+            f"{persona_engine.build_system_prompt()}\n"
+            f"---\n"
+            f"以下是知识库素材：\n"
+            f"---\n"
+            f"{ctx.kb_context}\n"
+            f"---\n"
+            f"请从以上素材中，选择一个最符合上述人设的创作选题。\n"
+            f"只输出选题标题，不要多余内容。"
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+        response = await llm.ainvoke(messages)
+        topic = response.content.strip()
+
+        if not topic:
+            ctx.errors.append(PipelineError(
+                error_code="TOPIC_SELECTION_FAILED",
+                stage="topic_selection",
+                message="LLM returned empty topic during auto selection.",
+                recoverable=True,
+            ))
+            return ctx
+
+        ctx.topic = topic
+        return ctx
 
     async def run(self, ctx: PipelineContext, pipeline: dict[str, Any]) -> PipelineContext:
         """Execute all stages with circuit breaker and error strategy."""
@@ -57,6 +121,12 @@ class PipelineOrchestrator:
                     message=f"Unknown plugin: '{plugin_id}'",
                     recoverable=True,
                 ))
+                return ctx
+
+        # Auto topic selection (built-in, runs before stages)
+        if pipeline.get("topic_selection") and not ctx.topic:
+            ctx = await self._auto_select_topic(ctx, pipeline)
+            if ctx.errors:
                 return ctx
 
         for stage_def in stages:
