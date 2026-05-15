@@ -120,3 +120,17 @@ class TestImageSchemas:
         )
         assert img.path.name == "test.png"
         assert img.prompt == "a cat"
+
+
+class TestWebhookNotifyHook:
+    @pytest.mark.asyncio
+    async def test_webhook_notify_skips_without_config(self) -> None:
+        from iperson.pipeline.hooks.webhook_notify import WebhookNotifyHook
+
+        hook = WebhookNotifyHook()
+        pctx = PipelineContext(topic="test")
+        ctx = HookContext(
+            pipeline_ctx=pctx, hook_point="after.publish", config={}
+        )
+        result = await hook.execute(ctx)
+        assert result.pipeline_ctx.data.get("webhook_notified") is False
