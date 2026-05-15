@@ -6,84 +6,178 @@
 
 ## 1. 概述
 
-本文档定义 iPerson 通用全自动个人 IP 运营平台在 Phase 1-4 基础上的架构优化方案，涵盖自动配图生成、平台集成与自动发布、插件生态与可扩展性、内容智能深化四个方向。
+本文档定义 iPerson 通用全自动个人 IP 运营平台在 Phase 1-4 基础上的架构优化方案，核心设计理念是 **Hook 化**——所有"智能"能力作为 Hook 与管线解耦，通过 Hook Point 机制实现可组合、可配置、可插拔的扩展体系。
 
-## 2. 自动配图生成 (P0)
+## 2. Hook 架构
 
 ### 2.1 设计目标
 
-在内容生成管线中自动为文章生成配图，提升内容视觉表现力。
+- 所有内容智能能力通过 Hook 实现，与 Pipeline 解耦
+- 新增能力只需写一个新 Hook 类，无需改管线
+- 同一个 Hook Point 可挂多个 Hook，按序执行
+- Recipe 中声明哪些 Hook 启用，粒度到每个 stage
+- Hook 通过插件系统加载，第三方可写自定义 Hook
 
-### 2.2 架构
-
-新增 `media.image_gen` 插件，插入 Pipeline 中 audit 之后、publish 之前：
-
-```
-research → generation → humanizer → audit → [image_gen] → publish
-```
-
-### 2.3 插件定义
-
-```yaml
-- plugin: media.image_gen
-  config:
-    provider: openai              # openai / stability
-    model: dall-e-3
-    style: "flat illustration, warm tones"
-    count: 2                      # 生成配图数量
-    cover: true                   # 是否生成封面图
-    aspect_ratio: "16:9"          # 封面图比例
-```
-
-### 2.4 模块结构
-
-```
-iperson/core/media/
-├── __init__.py
-├── image_gen.py          # ImageGenerator 基类
-├── providers/
-│   ├── openai.py         # DALL-E 3 适配器
-│   └── stability.py      # Stability AI 适配器
-└── schemas.py            # 图片元数据模型
-
-iperson/pipeline/plugins/media/
-├── __init__.py
-└── image_gen.py          # ImageGenPlugin
-```
-
-### 2.5 核心逻辑
-
-1. **主题提取**: 从 `ctx.generated_content` 中提取 2-3 个关键主题/段落作为图片 prompt
-2. **Prompt 构建**: 结合人设风格 + 配置的 style 参数生成图片描述
-3. **图片生成**: 调用外部 API 生成图片，下载到本地
-4. **注入文章**: 将 `![img](path)` 插入文章对应位置
-5. **存储**: 图片存入 `output/{topic}/media/`，封面图命名为 `cover.{ext}`
-
-### 2.6 数据模型
+### 2.2 Hook 定义
 
 ```python
 @dataclass
-class GeneratedImage:
-    path: Path
-    prompt: str
-    alt_text: str
-    is_cover: bool
-    position: int  # 在文章中的插入位置
+class HookContext:
+    pipeline_ctx: PipelineContext  # 完整管线上下文
+    hook_point: str                # 当前 hook 点
+    config: dict                   # 该 hook 的配置
+
+class BaseHook(ABC):
+    hook_id: str = ""
+    hook_point: str = ""    # 绑定到哪个 hook 点
+    name: str = ""
+    description: str = ""
+
+    @abstractmethod
+    async def execute(self, ctx: HookContext) -> HookContext:
+        ...
 ```
 
-### 2.7 错误处理
+### 2.3 Hook Points
 
-- API 调用失败: 跳过图片生成，不影响管线主流程
-- 图片下载失败: 记录错误，继续管线
-- 所有错误标记为 `recoverable`
+| Hook Point | 触发时机 | 可修改 | 用途 |
+|---|---|---|---|
+| `before.generation` | 生成前，prompt 已组装好 | 修改 `ctx.data["persona_engine"]`、注入额外 context | 趋势注入、安全护栏、风格调优 |
+| `after.generation` | 生成后，内容已写入 `ctx.generated_content` | 修改 `ctx.generated_content`、写分析报告 | SEO 分析、内容扫描、自动配图触发 |
+| `before.publish` | 发布前，内容已终稿 | 修改 `ctx.humanized_content` | 图片注入、格式微调 |
+| `after.publish` | 发布后 | 只读，触发副作用 | Webhook 通知、数据采集 |
 
-## 3. 平台集成与自动发布 (P0)
+### 2.4 Recipe 集成
 
-### 3.1 设计目标
+```yaml
+stages:
+  - plugin: research.kb_retrieve
+  - plugin: generation.article
+    hooks:
+      before:
+        - hook: intelligence.trending_inject
+          config: { source: zhihu }
+        - hook: safety.prompt_guard
+      after:
+        - hook: intelligence.seo_analyze
+        - hook: safety.content_scan
+  - plugin: quality.humanizer
+  - plugin: publish.multiplatform
+    hooks:
+      before:
+        - hook: media.image_gen
+          config: { provider: openai, style: "flat illustration" }
+      after:
+        - hook: webhook.notify
+```
+
+### 2.5 模块结构
+
+```
+iperson/pipeline/
+├── hook.py                # BaseHook, HookContext, HookRegistry
+├── hook_orchestrator.py   # HookOrchestrator — 执行指定 hook point 的所有 hook
+├── hooks/                 # 内置 hook 实现
+│   ├── __init__.py
+│   ├── trending_inject.py
+│   ├── prompt_guard.py
+│   ├── content_scan.py
+│   ├── seo_analyze.py
+│   ├── image_gen.py
+│   └── webhook_notify.py
+├── orchestrator.py        # 增强：在 stage 前后执行 hooks
+```
+
+### 2.6 HookOrchestrator
+
+```python
+class HookOrchestrator:
+    def __init__(self, registry: HookRegistry):
+        self.registry = registry
+
+    async def execute_hooks(
+        self,
+        hook_point: str,
+        pipeline_ctx: PipelineContext,
+        stage_config: dict,
+    ) -> PipelineContext:
+        """Execute all hooks registered for a given hook point."""
+        hooks = self.registry.get_hooks_for_point(hook_point)
+        for hook_cls in hooks:
+            hook_config = stage_config.get("hooks", {}).get(hook_point.split(".")[-1], {})
+            hook_ctx = HookContext(
+                pipeline_ctx=pipeline_ctx,
+                hook_point=hook_point,
+                config=hook_config,
+            )
+            result = await hook_cls().execute(hook_ctx)
+            pipeline_ctx = result.pipeline_ctx
+        return pipeline_ctx
+```
+
+### 2.7 Pipeline 集成
+
+在 `PipelineOrchestrator.run()` 中，每个 stage 执行前后插入 hook 调用：
+
+```python
+for stage_def in stages:
+    # Before hooks
+    ctx = await hook_orch.execute_hooks(f"before.{plugin_id}", ctx, stage_config)
+
+    # Stage execution (existing)
+    ctx = await plugin_instance.execute(ctx, stage_config)
+
+    # After hooks
+    ctx = await hook_orch.execute_hooks(f"after.{plugin_id}", ctx, stage_config)
+```
+
+## 3. 内置 Hook 实现
+
+### 3.1 趋势注入 (`intelligence.trending_inject`)
+
+- Hook Point: `before.generation`
+- 抓取各平台热点（知乎热榜、微博热搜）
+- 将热点话题注入到 generation 的 prompt context 中
+- 缓存策略: 每小时刷新一次
+
+### 3.2 安全护栏 (`safety.prompt_guard` + `safety.content_scan`)
+
+- Hook Point: `before.generation` + `after.generation`
+- `prompt_guard`: 在生成前检查 prompt 是否包含违规内容
+- `content_scan`: 在生成后扫描内容，匹配敏感词库
+- 敏感词库: `~/.iperson/security/blocked_words.txt`（可配置）
+- 支持 `action: block | flag` 策略
+
+### 3.3 SEO 分析 (`intelligence.seo_analyze`)
+
+- Hook Point: `after.generation`
+- 关键词密度分析
+- 标题优化建议（长度、关键词位置）
+- 可读性评分（段落长度、句式复杂度）
+- 仅输出建议到 `ctx.data["seo_report"]`，不自动修改内容
+
+### 3.4 自动配图 (`media.image_gen`)
+
+- Hook Point: `before.publish`
+- 从 `ctx.generated_content` 提取关键主题作为图片 prompt
+- 调用 DALL-E 3 / Stability AI 生成配图
+- 图片存入 `output/{topic}/media/`
+- 将 `![img](path)` 注入到 `ctx.humanized_content`
+
+### 3.5 Webhook 通知 (`webhook.notify`)
+
+- Hook Point: `after.publish`
+- 发送 HTTP POST 请求到配置的 URL
+- 事件: `pipeline.complete`, `pipeline.error`
+- Payload: topic, status, content_id, errors
+
+## 4. 平台集成与自动发布 (P0)
+
+### 4.1 设计目标
 
 将发布从"写文件"升级为真正的发布管理系统，支持发布状态追踪、队列调度、定时发布。
 
-### 3.2 两阶段策略
+### 4.2 两阶段策略
 
 #### Phase A — 发布引擎重构
 
@@ -121,110 +215,52 @@ iperson publish retry <id>        # 重试失败的发布
 | 微博 | 微博开放平台 | OAuth 2.0 |
 | 抖音 | 抖音开放平台 | OAuth 2.0 |
 
-### 3.3 重试与限流
+### 4.3 重试与限流
 
 - 可重试错误: 网络超时、速率限制（429）、临时服务不可用
 - 不可重试错误: 认证失败、内容违规、参数错误
 - 限流: 每个平台独立令牌桶，配置 `requests_per_minute`
 
-## 4. 插件生态与可扩展性 (P1)
+## 5. 插件生态与可扩展性 (P1)
 
-### 4.1 设计目标
+### 5.1 设计目标
 
-开放插件加载机制，支持第三方插件和 Webhook 事件系统。
+开放插件加载机制，支持第三方插件和 Hook。
 
-### 4.2 插件加载器
+### 5.2 插件加载器
 
 ```
 PluginRegistry
   ├── builtin/        # 内置插件（现有）
   ├── file/           # 从 ~/.iperson/plugins/*.py 动态加载
   └── pip/            # 从 pip 包加载（命名约定 iperson-plugin-*）
+
+HookRegistry
+  ├── builtin/        # 内置 hook（同上）
+  ├── file/           # 从 ~/.iperson/hooks/*.py 动态加载
+  └── pip/            # 从 pip 包加载
 ```
 
 **加载优先级**: builtin > file > pip（同名时内置优先，防止覆盖）
 
-**插件协议**（复用现有 `StagePlugin` 基类）:
-
-```python
-class ExternalPlugin(StagePlugin):
-    """第三方插件只需继承 StagePlugin + 实现 execute"""
-    plugin_id: str = "custom.xxx"
-```
-
-### 4.3 CLI 命令
+### 5.3 CLI 命令
 
 ```bash
 iperson plugin list                # 列出所有已安装插件
 iperson plugin install <package>   # pip 安装 + 注册
 iperson plugin remove <name>       # 卸载
+iperson hook list                  # 列出所有已安装 hook
 ```
-
-### 4.4 Webhook 系统
-
-**事件类型**:
-
-| 事件 | 触发时机 | Payload |
-|------|----------|---------|
-| `pipeline.start` | 管线开始运行 | topic, recipe, persona |
-| `pipeline.stage_complete` | 每个阶段完成 | stage, duration, status |
-| `pipeline.error` | 管线出错 | stage, error_code, message |
-| `pipeline.complete` | 管线完成 | status, content_id, errors |
-
-**配置**:
-
-```yaml
-webhooks:
-  - url: "https://hooks.example.com/iperson"
-    events: ["pipeline.complete", "pipeline.error"]
-    secret: "whsec_xxx"
-```
-
-## 5. 内容智能深化 (P1-P3)
-
-### 5.1 外部趋势检测 (P2)
-
-新增 `iperson/topics/trending.py`:
-
-```bash
-iperson topics trending                    # 全平台热点
-iperson topics trending --source zhihu     # 指定平台
-iperson topics trending --category tech    # 指定领域
-```
-
-- 各平台热点抓取器（知乎热榜、微博热搜、百度指数）
-- 与现有 `TopicSuggestionEngine` 融合，trending 来源权重更高
-- 缓存策略: 每小时刷新一次，避免频繁请求
-
-### 5.2 内容安全护栏 (P1)
-
-在 `quality.audit` 中增强:
-
-- 敏感词库: `~/.iperson/security/blocked_words.txt`（可配置）
-- 新增 `safety` 审核维度
-- 新增 `on_fail: block` 策略（阻止发布，区别于 abort）
-
-### 5.3 SEO 分析 (P3)
-
-新增可选插件 `quality.seo`:
-
-- 关键词密度分析
-- 标题优化建议（长度、关键词位置）
-- 可读性评分（段落长度、句式复杂度）
-- 仅输出建议，不自动修改内容
 
 ## 6. 实施计划
 
 | 优先级 | 方向 | 模块 | 工作量 |
 |--------|------|------|--------|
-| P0 | 自动配图生成 | `core/media/`, `plugins/media/image_gen.py` | 2-3天 |
+| P0 | Hook 核心框架 | `hook.py`, `hook_orchestrator.py`, 管线集成 | 2天 |
 | P0 | 发布引擎 Phase A | 状态机、CLI 增强、DB 迁移 | 2-3天 |
-| P1 | 插件加载器 | `pipeline/loader.py`, CLI | 3-4天 |
-| P1 | 内容安全护栏 | `audit` 增强、词库 | 1-2天 |
-| P2 | 外部趋势检测 | `topics/trending.py` | 2-3天 |
+| P1 | 内置 Hook 实现 | 5 个内置 hook | 3-4天 |
+| P1 | 插件/Hook 加载器 | `loader.py`, CLI | 2-3天 |
 | P2 | 平台适配器 Phase B | 各平台 client 实现 | 每平台 2-3天 |
-| P3 | Webhook 系统 | `pipeline/hooks.py` | 2天 |
-| P3 | SEO 分析 | `plugins/quality/seo.py` | 2天 |
 
 ## 7. 不变项
 
