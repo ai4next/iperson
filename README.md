@@ -132,51 +132,52 @@ Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的阶段
 
 ### 内置 Pipeline
 
-| Pipeline | 适用场景 | 阶段数 | 自动选题 | 目标平台 |
-|----------|----------|--------|----------|----------|
-| `quick` | 个人日更，5 分钟出稿 | 5 阶段 | ✅ | 小红书 |
-| `full` | 深度内容创作 | 5 阶段 | ✅ | 小红书 + 微信 + 知乎 |
-| `trending` | 快速追热点 | 5 阶段（精简审核） | ✅ | 小红书 |
+| Pipeline | 阶段数 | 自动选题 | 默认平台 |
+|----------|--------|----------|----------|
+| `default` | 4 | ✅ | 小红书 + 微信 + 知乎 |
+
+差异化通过 hook 配置实现（如调整目标平台、humanizer 参数等）。
 
 ### Pipeline 完整语法
 
 ```yaml
-name: "极速模式"
-description: "个人创作者日更，5分钟出稿"
+name: "default"
+description: "通用内容管线"
 topic_selection: true                       # 启用自动选题
-stages:
-  - plugin: research.kb_retrieve
+nodes:
+  - id: research
+    node: research.kb_retrieve
     config:
-      top_k: 10                             # 拉取更多素材供选题筛选
+      top_k: 10                             # 拉取素材条数
 
-  - plugin: generation.article
-    hooks:                                  # 可选：阶段钩子
+  - id: generate
+    node: generation.article
+    hooks:                                  # 可选：节点钩子
       before:
         - hook: intelligence.trending_inject
           config: { source: zhihu }
         - hook: safety.prompt_guard
       after:
+        - hook: quality.humanizer
+          config:
+            min_score: 0.35
+            max_iterations: 2
         - hook: intelligence.seo_analyze
         - hook: safety.content_scan
 
-  - plugin: quality.humanizer
-    config:
-      min_score: 0.35
-      max_iterations: 2
-
-  - plugin: quality.audit
-    config:
-      on_fail: regenerate                   # abort / skip / flag / regenerate
-
-  - plugin: publish.multiplatform
+  - id: publish
+    node: publish.multiplatform
     hooks:
       before:
+        - hook: quality.platformize
+          config:
+            platforms: [xiaohongshu, wechat, zhihu]
         - hook: media.image_gen
           config: { provider: openai, style: "flat illustration, warm tones", count: 2, cover: true }
       after:
         - hook: webhook.notify
     config:
-      platforms: [xiaohongshu]
+      platforms: [xiaohongshu, wechat, zhihu]
 ```
 
 ### 自定义 Pipeline
@@ -367,7 +368,7 @@ stages:
 
 ```bash
 iperson publish run [TOPIC]                  # 内容主题（可选，留空则自动选题）
-  --pipeline, -r  <name>                     # Pipeline 名称，默认 "quick"
+  --pipeline, -r  <name>                     # Pipeline 名称，默认 "default"
   --persona, -p    <name>                    # 人设名称
   --platform       <name>                    # 目标平台，默认 "xiaohongshu"
   --verbose                                  # 显示详细输出（含插件注册、阶段耗时、内容预览等）
@@ -375,68 +376,92 @@ iperson publish run [TOPIC]                  # 内容主题（可选，留空则
 
 ## 管线架构
 
-内容生产采用 **插件化管线** 架构，支持可选的内置自动选题阶段，由 YAML Pipeline 灵活编排：
+内容生产采用 **LangGraph 编排** 架构，每个阶段是一个 Node，Node 支持 pre/post hook 挂载：
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                       Pipeline                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐         │
-│  │   Research   │→ │    Topic     │→ │ Generation │         │
-│  │   素材检索     │  │   Selection  │  │  内容生成    │         │
-│  │              │  │   (可选自动   │  │            │         │
-│  │              │  │   选题+人设)  │  │            │         │
-│  └──────────────┘  └──────────────┘  └────────────┘         │
-│                                           │                  │
-│                                           ↓                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐         │
-│  │   Publish    │← │    Human     │← │  Quality   │         │
-│  │  多平台发布    │  │    Review    │  │  质量把关   │         │
-│  │              │  │   人工审核    │  │            │         │
-│  └──────────────┘  └──────────────┘  └────────────┘         │
-└──────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                       Pipeline                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Research   │→ │    Topic     │→ │  Generation  │     │
+│  │   素材检索     │  │   Selection  │  │   内容生成     │     │
+│  └──────────────┘  └──────────────┘  └──────┬───────┘     │
+│                                              │              │
+│                                        post-hook           │
+│                                              │              │
+│                                    ┌─────────▼────────┐    │
+│                                    │  quality.humanizer│    │
+│                                    │  AI痕迹淡化       │    │
+│                                    └──────────────────┘    │
+│                                              │              │
+│                                              ▼              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Publish    │← │  pre-hook    │← │  Generation  │     │
+│  │  多平台发布    │  │ platformize  │  │  (输出)       │     │
+│  │              │  │ 平台化适配    │  │              │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### 内置阶段插件
+### 内置 Node
 
-| 阶段 | 插件 ID | 说明 |
-|------|---------|------|
+| Node | ID | 说明 |
+|------|-----|------|
 | Research | `research.kb_retrieve` | 从知识库检索 Top-K 相关素材 |
 | Generation | `generation.article` | 结合人设与素材生成文章正文 |
-| Quality | `quality.humanizer` | AI 痕迹淡化（检测 → 加权评分 → 局部改写），支持迭代 |
-| Quality | `quality.audit` | 多维度质量审核（子指标评分 + 加权综合 + 改进建议） |
+| Topic Selection | `builtin.topic_selection` | 自动选题（人设+KB匹配，内置非插件） |
 | Publish | `publish.multiplatform` | 多平台格式适配与内容导出 |
+
+### 内置 Hook
+
+| Hook | 挂载点 | 说明 |
+|------|--------|------|
+| `quality.humanizer` | `after.generate` | AI 痕迹淡化（检测 → 评分 → 改写迭代） |
+| `quality.platformize` | `before.publish` | 按平台风格改写内容 |
+| `intelligence.trending_inject` | `before.generate` | 热点话题注入生成上下文 |
+| `safety.prompt_guard` | `before.generate` | 生成前安全检查 |
+| `intelligence.seo_analyze` | `after.generate` | SEO 分析 |
+| `safety.content_scan` | `after.generate` | 内容敏感词扫描 |
+| `media.image_gen` | `before.publish` | 自动配图 |
+| `webhook.notify` | `after.publish` | 管线完成通知 |
 
 管线支持 CircuitBreaker 熔断保护、Pipeline 预校验、on_error 策略（abort/skip）。
 
 ### Pipelines（内容管线）
 
-通过 YAML 编排各阶段插件及其配置。内置三种 Pipelines，均默认启用自动选题：
+通过 YAML 编排各阶段插件及其配置。内置一套通用 Pipeline，差异化通过 hook 配置实现：
 
-- **完整模式** (`full.yaml`) — 深度内容：KB搜索(10条) → 自动选题(人设匹配) → 生成 → 人味化 → 审核 → 三平台发布
-- **极速模式** (`quick.yaml`) — 个人日更，5分钟出稿：KB搜索(10条) → 自动选题(人设匹配) → 生成 → 人味化 → 审核 → 小红书发布
-- **热点追稿** (`trending.yaml`) — 快速追热点，精简审核维度，失败仅标记不阻塞
+- **默认管线** (`default.yaml`) — KB搜索(10条) → 自动选题(人设匹配) → 生成 → 人味化 → 平台化适配 → 多平台发布
 
-Pipeline 示例（`quick.yaml`）：
+Pipeline 示例（`default.yaml`）：
 
 ```yaml
-name: "极速模式"
-description: "个人创作者日更，5分钟出稿"
+name: "default"
+description: "通用内容管线"
 topic_selection: true
-stages:
-  - plugin: research.kb_retrieve
+nodes:
+  - id: research
+    node: research.kb_retrieve
     config:
       top_k: 10
-  - plugin: generation.article
-  - plugin: quality.humanizer
+  - id: topic_selection
+    node: builtin.topic_selection
+  - id: generate
+    node: generation.article
+    hooks:
+      after:
+        - hook: quality.humanizer
+          config:
+            min_score: 0.35
+            max_iterations: 2
+  - id: publish
+    node: publish.multiplatform
+    hooks:
+      before:
+        - hook: quality.platformize
+          config:
+            platforms: [xiaohongshu, wechat, zhihu]
     config:
-      min_score: 0.35
-      max_iterations: 2
-  - plugin: quality.audit
-    config:
-      on_fail: regenerate
-  - plugin: publish.multiplatform
-    config:
-      platforms: [xiaohongshu]
+      platforms: [xiaohongshu, wechat, zhihu]
 ```
 
 ## 功能模块
@@ -615,7 +640,7 @@ uv run mypy iperson/
 uv run iperson publish run --verbose
 
 # 或指定选题和管线
-uv run iperson publish run "示例选题" --pipeline quick --verbose
+uv run iperson publish run "示例选题" --pipeline default --verbose
 ```
 
 ## 项目结构
@@ -624,9 +649,7 @@ uv run iperson publish run "示例选题" --pipeline quick --verbose
 iperson/
 ├── pyproject.toml              # 项目元数据与依赖
 ├── pipelines/                   # 内置 Pipeline YAML
-│   ├── full.yaml
-│   ├── quick.yaml
-│   └── trending.yaml
+│   └── default.yaml
 ├── tests/                      # 测试套件（22 个测试文件）
 ├── iperson/
 │   ├── cli/                    # CLI 入口

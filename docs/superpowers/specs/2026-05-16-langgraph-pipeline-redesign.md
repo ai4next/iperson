@@ -156,26 +156,32 @@ nodes:
 - LangGraph Graph 组装逻辑
 - Node pre/post hook 执行机制
 
-## 8. 内置 Pipeline 更新
+## 8. 默认 Pipeline
 
-### 完整模式 (full.yaml)
+一套通用流程，差异化通过 hook 配置实现：
 
 ```yaml
-name: "完整模式"
-description: "深度内容，从KB检索到多平台发布"
+name: "default"
+description: "通用内容管线：检索 → 选题 → 生成 → 发布"
 topic_selection: true
 nodes:
   - id: research
     node: research.kb_retrieve
     config:
       top_k: 10
+
   - id: topic_selection
     node: builtin.topic_selection
+
   - id: generate
     node: generation.article
     hooks:
       after:
         - hook: quality.humanizer
+          config:
+            min_score: 0.35
+            max_iterations: 2
+
   - id: publish
     node: publish.multiplatform
     hooks:
@@ -187,61 +193,12 @@ nodes:
       platforms: [xiaohongshu, wechat, zhihu]
 ```
 
-### 极速模式 (quick.yaml)
+### 文件变更
 
-```yaml
-name: "极速模式"
-description: "个人创作者日更，5分钟出稿"
-topic_selection: true
-nodes:
-  - id: research
-    node: research.kb_retrieve
-    config:
-      top_k: 10
-  - id: topic_selection
-    node: builtin.topic_selection
-  - id: generate
-    node: generation.article
-    hooks:
-      after:
-        - hook: quality.humanizer
-          config:
-            min_score: 0.35
-            max_iterations: 2
-  - id: publish
-    node: publish.multiplatform
-    hooks:
-      before:
-        - hook: quality.platformize
-          config:
-            platforms: [xiaohongshu]
-    config:
-      platforms: [xiaohongshu]
-```
+- `pipelines/full.yaml` → 删除
+- `pipelines/quick.yaml` → 删除
+- `pipelines/trending.yaml` → 删除
+- `pipelines/default.yaml` → 新增（默认管线）
+- `README.md` → 更新架构图、内置 Pipeline 表、示例、项目结构
 
-### 热点追稿 (trending.yaml)
-
-```yaml
-name: "热点追稿"
-description: "快速追热点"
-topic_selection: true
-nodes:
-  - id: research
-    node: research.kb_retrieve
-    config:
-      top_k: 10
-  - id: topic_selection
-    node: builtin.topic_selection
-  - id: generate
-    node: generation.article
-    hooks:
-      after:
-        - hook: quality.humanizer
-  - id: publish
-    node: publish.multiplatform
-    hooks:
-      before:
-        - hook: quality.platformize
-    config:
-      platforms: [xiaohongshu]
-```
+用户通过 CLI 参数或全局配置覆盖 hook 配置来实现差异化（如只发小红书、调整 humanizer 参数等）。
