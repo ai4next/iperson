@@ -13,13 +13,20 @@ from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.errors import PipelineError
 from iperson.pipeline.plugin import StagePlugin
 from iperson.pipeline.registry import PluginRegistry
+from iperson.pipeline.hook import HookRegistry
+from iperson.pipeline.hook_orchestrator import HookOrchestrator
 
 
 class PipelineOrchestrator:
     """Orchestrates sequential execution of pipeline stages with CircuitBreaker support."""
 
-    def __init__(self, registry: PluginRegistry) -> None:
+    def __init__(
+        self,
+        registry: PluginRegistry,
+        hook_registry: HookRegistry | None = None,
+    ) -> None:
         self.registry = registry
+        self.hook_orch = HookOrchestrator(hook_registry or HookRegistry())
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
 
     def _get_circuit_breaker(self, plugin_id: str) -> CircuitBreaker:
@@ -73,6 +80,9 @@ class PipelineOrchestrator:
                     break
                 continue
 
+            # Before hooks
+            ctx = await self.hook_orch.execute_hooks(f"before.{plugin_id}", ctx, stage_config)
+
             plugin_class = self.registry.get(plugin_id)
             plugin_instance: StagePlugin = plugin_class()
 
@@ -102,6 +112,9 @@ class PipelineOrchestrator:
                 ))
                 if on_error == "abort":
                     break
+
+            # After hooks
+            ctx = await self.hook_orch.execute_hooks(f"after.{plugin_id}", ctx, stage_config)
 
         ctx.completed_at = datetime.now(timezone.utc).isoformat()
         if not ctx.errors:

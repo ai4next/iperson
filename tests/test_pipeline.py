@@ -539,3 +539,53 @@ async def test_pipeline_on_error_abort() -> None:
     result = await orchestrator.run(ctx, recipe)
     assert len(result.errors) == 1
     assert result.errors[0].stage == "test.abort_fail"
+
+
+class TestPipelineHooks:
+    @pytest.mark.asyncio
+    async def test_pipeline_runs_hooks_before_and_after_stage(self) -> None:
+        from iperson.pipeline.hook import BaseHook, HookContext, HookRegistry
+
+        registry = PluginRegistry()
+        hook_registry = HookRegistry()
+
+        class SimplePlugin(StagePlugin):
+            plugin_id = "test.simple"
+            name = "Simple"
+
+            async def execute(
+                self, ctx: PipelineContext, config: dict[str, Any] | None = None
+            ) -> PipelineContext:
+                ctx.data["stage_ran"] = True
+                return ctx
+
+        registry.register(SimplePlugin)
+
+        class BeforeHook(BaseHook):
+            hook_id = "test.before"
+            hook_point = "before.test.simple"
+            name = "Before"
+
+            async def execute(self, ctx: HookContext) -> HookContext:
+                ctx.pipeline_ctx.data["before_ran"] = True
+                return ctx
+
+        class AfterHook(BaseHook):
+            hook_id = "test.after"
+            hook_point = "after.test.simple"
+            name = "After"
+
+            async def execute(self, ctx: HookContext) -> HookContext:
+                ctx.pipeline_ctx.data["after_ran"] = True
+                return ctx
+
+        hook_registry.register(BeforeHook)
+        hook_registry.register(AfterHook)
+
+        orch = PipelineOrchestrator(registry, hook_registry=hook_registry)
+        ctx = PipelineContext(topic="test")
+        recipe = {"stages": [{"plugin": "test.simple", "config": {}}]}
+        result = await orch.run(ctx, recipe)
+        assert result.data.get("before_ran") is True
+        assert result.data.get("stage_ran") is True
+        assert result.data.get("after_ran") is True
