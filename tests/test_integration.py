@@ -17,16 +17,15 @@ from iperson.utils.llm import DummyLLM
 
 QUICK_RECIPE = """
 name: quick-test
-stages:
-  - plugin: research.kb_retrieve
+nodes:
+  - id: research
+    node: research.kb_retrieve
     config:
       top_k: 3
-  - plugin: generation.article
-  - plugin: quality.humanizer
-    config:
-      min_score: 0.35
-  - plugin: quality.audit
-  - plugin: publish.multiplatform
+  - id: generate
+    node: generation.article
+  - id: publish
+    node: publish.multiplatform
     config:
       platforms: [xiaohongshu]
 """
@@ -70,9 +69,6 @@ class TestQuickRecipeIntegration:
 
         assert result.status == "completed", f"Pipeline failed: {result.errors}"
         assert result.generated_content is not None
-        assert result.humanized_content is not None
-        assert result.audit_result is not None
-        assert "overall_status" in result.audit_result
         assert len(result.publish_results) > 0
         assert result.publish_results[0]["platform"] == "xiaohongshu"
 
@@ -94,45 +90,6 @@ class TestQuickRecipeIntegration:
         assert result.status == "completed"
 
     @pytest.mark.asyncio
-    async def test_quick_recipe_humanizer_removes_ai_phrases(self) -> None:
-        """Humanizer plugin modifies content with AI phrases."""
-        registry = PluginRegistry()
-        register_builtin_plugins(registry)
-        orchestrator = PipelineOrchestrator(registry)
-        recipe = load_pipeline_from_yaml("""
-name: humanizer-test
-stages:
-  - plugin: quality.humanizer
-    config:
-      min_score: 0.1
-      max_iterations: 1
-""")
-        ctx = PipelineContext(topic="test")
-        ctx.generated_content = "值得注意的是，这是一个测试。总的来说，还可以。"
-
-        result = await orchestrator.run(ctx, recipe)
-        assert result.humanized_content is not None
-        assert "值得注意的是" not in result.humanized_content
-
-    @pytest.mark.asyncio
-    async def test_quick_recipe_audit_gate_rejects_empty(self) -> None:
-        """Audit gate gives skip for empty content."""
-        registry = PluginRegistry()
-        register_builtin_plugins(registry)
-        orchestrator = PipelineOrchestrator(registry)
-        recipe = load_pipeline_from_yaml("""
-name: audit-test
-stages:
-  - plugin: quality.audit
-""")
-        ctx = PipelineContext(topic="test")
-        ctx.data["keywords"] = []
-        ctx.data["platform"] = "xiaohongshu"
-
-        result = await orchestrator.run(ctx, recipe)
-        assert result.audit_result is not None
-
-    @pytest.mark.asyncio
     async def test_quick_pipeline_with_topic_selection(self) -> None:
         """Quick pipeline runs with topic_selection enabled and empty topic."""
         registry = PluginRegistry()
@@ -141,8 +98,9 @@ stages:
         recipe = load_pipeline_from_yaml("""
 name: topic-selection-test
 topic_selection: true
-stages:
-  - plugin: generation.article
+nodes:
+  - id: generate
+    node: generation.article
 """)
         ctx = PipelineContext(persona_name="test", topic="")
         ctx.data["llm_client"] = DummyLLM(response="测试生成内容")

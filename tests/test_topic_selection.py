@@ -28,7 +28,7 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "RAG（检索增强生成）是一种结合检索和生成的AI架构。"
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
         assert result.topic == "RAG技术入门"
@@ -44,7 +44,7 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "some context"
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
         assert result.topic == "手动输入的选题"
@@ -59,7 +59,7 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "some context"
 
-        pipeline = {"name": "test", "topic_selection": False, "stages": []}
+        pipeline = {"name": "test", "topic_selection": False, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
         assert result.topic == ""
@@ -74,10 +74,10 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = ""
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
-        assert "TOPIC_SELECTION_FAILED" in [e.error_code for e in result.errors]
+        assert "TOPIC_SELECTION_FAILED" in [e["error_code"] for e in result.errors]
 
     @pytest.mark.asyncio
     async def test_error_on_missing_persona(self) -> None:
@@ -88,10 +88,10 @@ class TestTopicSelection:
         ctx.data["llm_client"] = DummyLLM()
         ctx.kb_context = "some context"
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
-        assert "TOPIC_SELECTION_FAILED" in [e.error_code for e in result.errors]
+        assert "TOPIC_SELECTION_FAILED" in [e["error_code"] for e in result.errors]
 
     @pytest.mark.asyncio
     async def test_error_on_missing_llm(self) -> None:
@@ -102,10 +102,10 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "some context"
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
-        assert "TOPIC_SELECTION_FAILED" in [e.error_code for e in result.errors]
+        assert "TOPIC_SELECTION_FAILED" in [e["error_code"] for e in result.errors]
 
     @pytest.mark.asyncio
     async def test_error_on_empty_llm_response(self) -> None:
@@ -117,7 +117,7 @@ class TestTopicSelection:
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "some context"
 
-        pipeline = {"name": "test", "topic_selection": True, "stages": []}
+        pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
-        assert "TOPIC_SELECTION_FAILED" in [e.error_code for e in result.errors]
+        assert "TOPIC_SELECTION_FAILED" in [e["error_code"] for e in result.errors]

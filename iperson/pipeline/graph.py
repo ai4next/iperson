@@ -55,6 +55,7 @@ def _state_to_context(state: PipelineState) -> PipelineContext:
     ctx = PipelineContext(
         topic=state.get("topic", ""),
     )
+    ctx.kb_chunks = state.get("kb_chunks", [])
     ctx.kb_context = state.get("kb_context", "")
     ctx.generated_content = state.get("generated_content", "")
     ctx.platform_contents = state.get("platform_contents", {})
@@ -67,10 +68,12 @@ def _state_to_context(state: PipelineState) -> PipelineContext:
 def _context_to_state(ctx: PipelineContext) -> dict[str, Any]:
     """Convert PipelineContext back to dict for state update."""
     return {
+        "kb_chunks": ctx.kb_chunks,
         "kb_context": ctx.kb_context,
         "topic": ctx.topic,
         "generated_content": ctx.generated_content,
         "platform_contents": ctx.platform_contents,
+        "publish_results": ctx.publish_results,
         "data": ctx.data,
         "errors": ctx.errors,
         "status": ctx.status,
@@ -97,6 +100,13 @@ def build_pipeline_graph(
         node_fn = _create_node_fn(plugin_id, plugin_class, node_def, hook_orch)
         workflow.add_node(node_id, node_fn)
         node_ids.append(node_id)
+
+    if not node_ids:
+        # No nodes to execute; add a passthrough node
+        workflow.add_node("noop", lambda s: s)
+        workflow.set_entry_point("noop")
+        workflow.add_edge("noop", END)
+        return workflow
 
     # Add edges: chain nodes sequentially
     for i in range(len(node_ids) - 1):

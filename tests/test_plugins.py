@@ -3,8 +3,6 @@ from __future__ import annotations
 import pytest
 
 from iperson.pipeline.context import PipelineContext
-from iperson.pipeline.plugins.quality.humanizer import HumanizerPlugin
-from iperson.pipeline.plugins.quality.audit import AuditPlugin
 from iperson.pipeline.plugins.research.kb_retrieve import KbRetrievePlugin
 from iperson.utils.llm import DummyLLM
 
@@ -24,61 +22,6 @@ class TestKbRetrievePlugin:
         ctx = PipelineContext(topic="test")
         result = await plugin.execute(ctx)
         assert result.kb_context == ""
-
-
-class TestHumanizerPlugin:
-    async def test_humanizer_replaces_phrases(self):
-        plugin = HumanizerPlugin()
-        ctx = PipelineContext(topic="test")
-        ctx.generated_content = "值得注意的是，这是一个测试内容。总的来说，还可以。"
-        result = await plugin.execute(ctx, config={"min_score": 0.0, "max_iterations": 1})
-        assert "值得注意的是" not in result.humanized_content
-        assert "总的来说" not in result.humanized_content
-
-    async def test_humanizer_no_content(self):
-        plugin = HumanizerPlugin()
-        ctx = PipelineContext(topic="test")
-        result = await plugin.execute(ctx)
-        assert result.humanized_content == ""  # no content to humanize
-
-    async def test_humanizer_with_default_config(self):
-        plugin = HumanizerPlugin()
-        ctx = PipelineContext(topic="test")
-        ctx.generated_content = "值得注意的是，这是一个测试内容。总的来说，还可以。"
-        result = await plugin.execute(ctx)
-        assert result.humanized_content is not None
-
-
-class TestAuditPlugin:
-    async def test_audit_plugin(self):
-        plugin = AuditPlugin()
-        ctx = PipelineContext(topic="test")
-        ctx.humanized_content = "# Test\n\nThis is test content with RAG keyword."
-        ctx.kb_chunks = [{"text": "RAG is retrieval.", "index": 0}]
-        ctx.data["keywords"] = ["RAG"]
-        ctx.data["platform"] = "xiaohongshu"
-        result = await plugin.execute(ctx)
-        assert result.audit_result is not None
-        assert "overall_status" in result.audit_result
-        assert "scores" in result.audit_result
-
-    async def test_audit_without_content(self):
-        plugin = AuditPlugin()
-        ctx = PipelineContext(topic="test")
-        result = await plugin.execute(ctx)
-        # Should handle gracefully - audit_result should be a dict
-        assert isinstance(result.audit_result, dict)
-
-    async def test_audit_falls_back_to_generated_content(self):
-        plugin = AuditPlugin()
-        ctx = PipelineContext(topic="test")
-        ctx.generated_content = "# Test\n\nSome generated content."
-        ctx.kb_chunks = [{"text": "Some content.", "index": 0}]
-        ctx.data["keywords"] = ["test"]
-        ctx.data["platform"] = "xiaohongshu"
-        result = await plugin.execute(ctx)
-        assert result.audit_result is not None
-        assert "overall_status" in result.audit_result
 
 
 class TestArticleGenerationPlugin:
@@ -121,12 +64,7 @@ class TestMultiplatformPublishPlugin:
         try:
             plugin = MultiplatformPublishPlugin()
             ctx = PipelineContext(topic="test")
-            ctx.humanized_content = "Test content."
-            ctx.audit_result = {
-                "overall_status": "pass",
-                "scores": {},
-                "dimensions": {},
-            }
+            ctx.platform_contents = {"xiaohongshu": "Test content."}
             result = await plugin.execute(ctx)
 
             assert len(result.publish_results) > 0
@@ -149,11 +87,6 @@ class TestMultiplatformPublishPlugin:
             plugin = MultiplatformPublishPlugin()
             ctx = PipelineContext(topic="test")
             ctx.generated_content = "Generated content only."
-            ctx.audit_result = {
-                "overall_status": "pass",
-                "scores": {},
-                "dimensions": {},
-            }
             result = await plugin.execute(ctx)
 
             assert len(result.publish_results) > 0
@@ -174,12 +107,7 @@ class TestMultiplatformPublishPlugin:
         try:
             plugin = MultiplatformPublishPlugin()
             ctx = PipelineContext(topic="test")
-            ctx.humanized_content = "Test content for weixin."
-            ctx.audit_result = {
-                "overall_status": "pass",
-                "scores": {},
-                "dimensions": {},
-            }
+            ctx.platform_contents = {"weixin": "Test content for weixin.", "xiaohongshu": "Test content."}
             result = await plugin.execute(
                 ctx, config={"platforms": ["weixin", "xiaohongshu"]}
             )
@@ -201,14 +129,10 @@ class TestRegistration:
 
         assert registry.has("research.kb_retrieve")
         assert registry.has("generation.article")
-        assert registry.has("quality.humanizer")
-        assert registry.has("quality.audit")
         assert registry.has("publish.multiplatform")
 
         plugin_list = registry.list_plugins()
         plugin_ids = [p["plugin_id"] for p in plugin_list]
         assert "research.kb_retrieve" in plugin_ids
         assert "generation.article" in plugin_ids
-        assert "quality.humanizer" in plugin_ids
-        assert "quality.audit" in plugin_ids
         assert "publish.multiplatform" in plugin_ids

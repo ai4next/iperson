@@ -7,7 +7,6 @@ from iperson.pipeline.plugin import StagePlugin
 from iperson.utils.output import (
     create_output_dir,
     write_article,
-    write_audit_report,
     write_platform_content,
 )
 
@@ -47,7 +46,6 @@ class MultiplatformPublishPlugin(StagePlugin):
 
         # Write core article
         write_article(out_dir, ctx.generated_content)
-        write_audit_report(out_dir, ctx.audit_result)
 
         # Write platform-specific content
         publish_results: list[dict[str, Any]] = []

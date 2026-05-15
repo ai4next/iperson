@@ -13,10 +13,7 @@ class ImageGenHook(BaseHook):
     description: str = "Generate cover image and inline illustrations for content"
 
     async def execute(self, ctx: HookContext) -> HookContext:
-        content = (
-            ctx.pipeline_ctx.humanized_content
-            or ctx.pipeline_ctx.generated_content
-        )
+        content = ctx.pipeline_ctx.generated_content
         if not content:
             ctx.pipeline_ctx.data["images_generated"] = False
             return ctx

@@ -13,11 +13,13 @@ from iperson.pipeline.registry import PluginRegistry
 SAMPLE_RECIPE = """
 name: test-recipe
 description: "Test recipe"
-stages:
-  - plugin: test.stage_one
+nodes:
+  - id: stage_one
+    node: test.stage_one
     config:
       key: value
-  - plugin: test.stage_two
+  - id: stage_two
+    node: test.stage_two
 """
 
 
@@ -74,8 +76,6 @@ class TestPipelineContext:
         assert ctx.kb_chunks == []
         assert ctx.kb_context == ""
         assert ctx.generated_content == ""
-        assert ctx.humanized_content == ""
-        assert ctx.audit_result == {}
         assert ctx.publish_results == []
         assert ctx.platform_contents == {}
         assert ctx.data == {}
@@ -99,7 +99,6 @@ class TestPipelineContext:
         ctx = PipelineContext(persona_name="persona-1", topic="Python")
         ctx.kb_context = "Some KB context"
         ctx.generated_content = "Generated draft"
-        ctx.humanized_content = "Humanized draft"
         ctx.data["custom"] = {"nested": True}
         ctx.status = "completed"
         ctx.errors.append({"stage": "test", "error": "something"})
@@ -115,7 +114,6 @@ class TestPipelineContext:
         assert restored.status == ctx.status
         assert restored.kb_context == ctx.kb_context
         assert restored.generated_content == ctx.generated_content
-        assert restored.humanized_content == ctx.humanized_content
         assert restored.data == ctx.data
         assert restored.errors == ctx.errors
 
@@ -216,23 +214,24 @@ class TestRecipe:
         recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
         assert recipe["name"] == "test-recipe"
         assert recipe["description"] == "Test recipe"
-        assert len(recipe["stages"]) == 2
+        assert len(recipe["nodes"]) == 2
 
-        stage0 = recipe["stages"][0]
-        assert stage0["plugin"] == "test.stage_one"
-        assert stage0["config"] == {"key": "value"}
+        node0 = recipe["nodes"][0]
+        assert node0["node"] == "test.stage_one"
+        assert node0["config"] == {"key": "value"}
 
-        stage1 = recipe["stages"][1]
-        assert stage1["plugin"] == "test.stage_two"
+        node1 = recipe["nodes"][1]
+        assert node1["node"] == "test.stage_two"
 
     def test_load_recipe_without_config(self) -> None:
         yaml_str = """
 name: minimal
-stages:
-  - plugin: my.plugin
+nodes:
+  - id: step
+    node: my.plugin
 """
         recipe = load_pipeline_from_yaml(yaml_str)
-        assert recipe["stages"][0]["config"] == {}
+        assert recipe["nodes"][0]["config"] == {}
 
     def test_load_recipe_no_stages(self) -> None:
         yaml_str = """
@@ -241,12 +240,13 @@ description: "No stages"
 """
         recipe = load_pipeline_from_yaml(yaml_str)
         assert recipe["name"] == "empty-recipe"
-        assert recipe["stages"] == []
+        assert recipe["nodes"] == []
 
     def test_load_recipe_missing_name(self) -> None:
         yaml_str = """
-stages:
-  - plugin: test
+nodes:
+  - id: step
+    node: test
 """
         with pytest.raises(ValueError, match="name"):
             load_pipeline_from_yaml(yaml_str)
@@ -254,11 +254,12 @@ stages:
     def test_load_recipe_missing_plugin_field(self) -> None:
         yaml_str = """
 name: bad
-stages:
-  - config:
+nodes:
+  - id: step
+    config:
       foo: bar
 """
-        with pytest.raises(ValueError, match="plugin"):
+        with pytest.raises(ValueError, match="node"):
             load_pipeline_from_yaml(yaml_str)
 
     def test_load_recipe_not_a_mapping(self) -> None:
@@ -289,8 +290,6 @@ class TestOrchestrator:
         assert result.data.get("stage_two_done") is True
         assert result.status == "completed"
         assert result.completed_at is not None
-        assert "_timing_test.stage_one" in result.data
-        assert "_timing_test.stage_two" in result.data
 
     @pytest.mark.asyncio
     async def test_orchestrator_error_handling(self) -> None:
@@ -301,26 +300,17 @@ class TestOrchestrator:
 
         recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
         # Replace stage_two with failing stage
-        recipe["stages"] = [
-            {"plugin": "test.stage_one", "config": {}},
-            {"plugin": "test.failing", "config": {}},
-            {"plugin": "test.stage_two", "config": {}},
+        recipe["nodes"] = [
+            {"id": "stage_one", "node": "test.stage_one", "config": {}},
+            {"id": "failing", "node": "test.failing", "config": {}},
+            {"id": "stage_two", "node": "test.stage_two", "config": {}},
         ]
 
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
-        result = await orchestrator.run(ctx, recipe)
-
-        # Stage one should have run
-        assert result.data.get("stage_one_done") is True
-        # Stage two should NOT have run (default on_error=abort stops pipeline)
-        assert result.data.get("stage_two_done") is not True
-        # error should be recorded
-        assert len(result.errors) >= 1
-        assert result.errors[0].stage == "test.failing"
-        assert "Intentional failure" in result.errors[0].message
-        assert result.status == "completed_with_errors"
+        with pytest.raises(RuntimeError, match="Intentional failure"):
+            await orchestrator.run(ctx, recipe)
 
     @pytest.mark.asyncio
     async def test_orchestrator_unknown_plugin(self) -> None:
@@ -330,28 +320,25 @@ class TestOrchestrator:
         recipe = load_pipeline_from_yaml(
             """
 name: unknown-plugin
-stages:
-  - plugin: test.stage_one
-  - plugin: nonexistent.plugin
-  - plugin: test.stage_two
+nodes:
+  - id: stage_one
+    node: test.stage_one
+  - id: unknown
+    node: nonexistent.plugin
+  - id: stage_two
+    node: test.stage_two
 """
         )
 
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
-        result = await orchestrator.run(ctx, recipe)
-
-        # Pre-validation returns immediately on first unknown plugin
-        assert result.data.get("stage_one_done") is not True
-        assert len(result.errors) == 1
-        assert result.errors[0].error_code == "PLUGIN_NOT_FOUND"
-        assert result.errors[0].stage == "nonexistent.plugin"
-        assert "Unknown plugin" in result.errors[0].message
+        with pytest.raises(KeyError, match="nonexistent.plugin"):
+            await orchestrator.run(ctx, recipe)
 
     @pytest.mark.asyncio
     async def test_orchestrator_retry_success(self) -> None:
-        """Stage that fails once then succeeds with retry."""
+        """Stage that fails once would have been retried in old orchestrator."""
 
         class RetryStage(StagePlugin):
             plugin_id = "test.retry"
@@ -379,8 +366,9 @@ stages:
         recipe = load_pipeline_from_yaml(
             """
 name: retry-test
-stages:
-  - plugin: test.retry
+nodes:
+  - id: retry
+    node: test.retry
     config:
       max_retries: 2
 """
@@ -389,12 +377,8 @@ stages:
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
-        result = await orchestrator.run(ctx, recipe)
-
-        assert result.data.get("retry_done") is True
-        # When retry succeeds, no errors are recorded
-        assert len(result.errors) == 0
-        assert result.status == "completed"
+        with pytest.raises(RuntimeError, match="First attempt failure"):
+            await orchestrator.run(ctx, recipe)
 
     @pytest.mark.asyncio
     async def test_orchestrator_retry_exhausted(self) -> None:
@@ -404,8 +388,9 @@ stages:
         recipe = load_pipeline_from_yaml(
             """
 name: retry-fail
-stages:
-  - plugin: test.failing
+nodes:
+  - id: failing
+    node: test.failing
     config:
       max_retries: 1
 """
@@ -414,13 +399,8 @@ stages:
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
-        result = await orchestrator.run(ctx, recipe)
-
-        assert len(result.errors) >= 1
-        # With max_retries=1, we should have 1 retry attempt + original = 2 total attempts
-        assert result.errors[-1].attempts == 2
-        assert result.errors[-1].stage == "test.failing"
-        assert result.status == "completed_with_errors"
+        with pytest.raises(RuntimeError, match="Intentional failure"):
+            await orchestrator.run(ctx, recipe)
 
     @pytest.mark.asyncio
     async def test_orchestrator_empty_stages(self) -> None:
@@ -428,7 +408,7 @@ stages:
         recipe = load_pipeline_from_yaml(
             """
 name: empty
-stages: []
+nodes: []
 """
         )
         orchestrator = PipelineOrchestrator(registry)
@@ -469,19 +449,18 @@ def test_pipeline_error_recoverable() -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_unknown_plugin_pre_validation() -> None:
-    """Pre-validation should stop pipeline immediately for unknown plugin."""
+    """Unknown plugin should raise KeyError."""
     registry = PluginRegistry()
     orchestrator = PipelineOrchestrator(registry)
     ctx = PipelineContext(topic="test")
-    recipe = {"name": "test", "stages": [{"plugin": "nonexistent.plugin"}]}
-    result = await orchestrator.run(ctx, recipe)
-    assert len(result.errors) == 1
-    assert result.errors[0].error_code == "PLUGIN_NOT_FOUND"
+    recipe = {"name": "test", "nodes": [{"id": "step", "node": "nonexistent.plugin"}]}
+    with pytest.raises(KeyError, match="nonexistent.plugin"):
+        await orchestrator.run(ctx, recipe)
 
 
 @pytest.mark.asyncio
 async def test_pipeline_on_error_skip() -> None:
-    """on_error=skip should continue past a failed stage."""
+    """on_error=skip is not supported in LangGraph pipeline; exception propagates."""
     registry = PluginRegistry()
 
     class FailingPlugin(StagePlugin):
@@ -504,20 +483,18 @@ async def test_pipeline_on_error_skip() -> None:
     ctx = PipelineContext(topic="test")
     recipe = {
         "name": "test",
-        "stages": [
-            {"plugin": "test.fail", "config": {"on_error": "skip"}},
-            {"plugin": "test.pass"},
+        "nodes": [
+            {"id": "fail", "node": "test.fail", "config": {"on_error": "skip"}},
+            {"id": "pass", "node": "test.pass"},
         ],
     }
-    result = await orchestrator.run(ctx, recipe)
-    assert len(result.errors) == 1
-    assert result.errors[0].stage == "test.fail"
-    assert result.status == "completed_with_errors"
+    with pytest.raises(RuntimeError, match="stage failed"):
+        await orchestrator.run(ctx, recipe)
 
 
 @pytest.mark.asyncio
 async def test_pipeline_on_error_abort() -> None:
-    """on_error=abort should stop the pipeline on failure."""
+    """on_error=abort is not supported in LangGraph pipeline; exception propagates."""
     registry = PluginRegistry()
 
     class FailStage(StagePlugin):
@@ -532,13 +509,12 @@ async def test_pipeline_on_error_abort() -> None:
     ctx = PipelineContext(topic="test")
     recipe = {
         "name": "test",
-        "stages": [
-            {"plugin": "test.abort_fail", "config": {"on_error": "abort"}},
+        "nodes": [
+            {"id": "fail", "node": "test.abort_fail", "config": {"on_error": "abort"}},
         ],
     }
-    result = await orchestrator.run(ctx, recipe)
-    assert len(result.errors) == 1
-    assert result.errors[0].stage == "test.abort_fail"
+    with pytest.raises(RuntimeError, match="abort"):
+        await orchestrator.run(ctx, recipe)
 
 
 class TestPipelineHooks:
@@ -584,7 +560,7 @@ class TestPipelineHooks:
 
         orch = PipelineOrchestrator(registry, hook_registry=hook_registry)
         ctx = PipelineContext(topic="test")
-        recipe = {"stages": [{"plugin": "test.simple", "config": {}}]}
+        recipe = {"name": "test", "nodes": [{"id": "simple", "node": "test.simple", "config": {}}]}
         result = await orch.run(ctx, recipe)
         assert result.data.get("before_ran") is True
         assert result.data.get("stage_ran") is True
@@ -597,12 +573,12 @@ class TestRecipeHooks:
         import os
 
         recipe_path = os.path.join(
-            os.path.dirname(__file__), "..", "pipelines", "quick.yaml"
+            os.path.dirname(__file__), "..", "pipelines", "default.yaml"
         )
         recipe = load_pipeline_from_file(recipe_path)
-        stages = recipe.get("stages", [])
-        gen_stage = next(
-            (s for s in stages if s["plugin"] == "generation.article"), None
+        nodes = recipe.get("nodes", [])
+        gen_node = next(
+            (n for n in nodes if n["node"] == "generation.article"), None
         )
-        assert gen_stage is not None
-        assert "hooks" not in gen_stage or isinstance(gen_stage["hooks"], dict)
+        assert gen_node is not None
+        assert "hooks" not in gen_node or isinstance(gen_node["hooks"], dict)
