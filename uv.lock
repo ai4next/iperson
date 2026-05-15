@@ -568,7 +568,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.4.0" },
     { name = "langchain-google-genai", marker = "extra == 'gemini'", specifier = ">=2.0" },
     { name = "langchain-openai", specifier = ">=1.2.1" },
-    { name = "langgraph", specifier = ">=0.4.0" },
+    { name = "langgraph", specifier = ">=1.2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },

@@ -75,10 +75,14 @@ async def _run_pipeline(
         console.print(f"[dim]Loaded pipeline:[/dim] {pipeline_data.get('name', pipeline_name)}")
 
     # Validate topic availability
-    if not topic and not pipeline_data.get("topic_selection"):
+    has_topic_selection = any(
+        n.get("node") == "builtin.topic_selection"
+        for n in pipeline_data.get("nodes", [])
+    )
+    if not topic and not has_topic_selection:
         console.print(
             "[red]Error:[/red] No topic provided and pipeline does not support auto topic selection. "
-            "Either provide a topic argument or enable 'topic_selection: true' in the pipeline YAML."
+            "Either provide a topic argument or add a 'builtin.topic_selection' node to the pipeline."
         )
         raise typer.Exit(1)
 
