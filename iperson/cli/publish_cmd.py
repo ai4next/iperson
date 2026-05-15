@@ -41,14 +41,14 @@ console = Console()
 
 @publish_group.command()
 def run(
-    topic: str = typer.Argument(..., help="Content topic"),
-    recipe: str = typer.Option("quick", "--recipe", "-r", help="Pipeline recipe name"),
+    topic: str = typer.Argument("", help="Content topic（可选，留空则自动选题）"),
+    pipeline: str = typer.Option("quick", "--pipeline", "-r", help="Pipeline name"),
     persona: str = typer.Option("", "--persona", "-p", help="Persona name"),
     platform: str = typer.Option("xiaohongshu", "--platform", help="Target platform"),
     verbose: bool = typer.Option(False, "--verbose", help="Show detailed output"),
 ) -> None:
     """Run the content generation pipeline and publish."""
-    asyncio.run(_run_pipeline(topic, recipe, persona, platform, verbose))
+    asyncio.run(_run_pipeline(topic, pipeline, persona, platform, verbose))
 
 
 async def _run_pipeline(
@@ -66,14 +66,22 @@ async def _run_pipeline(
     # LLM client
     llm_client = get_llm("generation")
 
-    # Load recipe
+    # Load pipeline
     try:
-        recipe_data = load_pipeline(pipeline_name)
+        pipeline_data = load_pipeline(pipeline_name)
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
     if verbose:
-        console.print(f"[dim]Loaded recipe:[/dim] {recipe_data.get('name', pipeline_name)}")
+        console.print(f"[dim]Loaded pipeline:[/dim] {pipeline_data.get('name', pipeline_name)}")
+
+    # Validate topic availability
+    if not topic and not pipeline_data.get("topic_selection"):
+        console.print(
+            "[red]Error:[/red] No topic provided and pipeline does not support auto topic selection. "
+            "Either provide a topic argument or enable 'topic_selection: true' in the pipeline YAML."
+        )
+        raise typer.Exit(1)
 
     # Load or create persona
     persona_profile = load_persona(persona_name or "default")
@@ -116,7 +124,7 @@ async def _run_pipeline(
     if verbose:
         console.print("[bold]Running pipeline...[/bold]")
 
-    result = await orchestrator.run(ctx, recipe_data)
+    result = await orchestrator.run(ctx, pipeline_data)
 
     # Output directory
     out_dir = create_output_dir(topic)

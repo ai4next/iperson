@@ -15,11 +15,11 @@ console = Console()
 @agent_group.command()
 def run(
     topic: str = typer.Argument(..., help="Content topic"),
-    recipe: str = typer.Option("quick", "--recipe", "-r", help="Recipe name"),
+    pipeline: str = typer.Option("quick", "--pipeline", "-r", help="Pipeline name"),
     persona: str = typer.Option("default", "--persona", "-p", help="Persona name"),
 ) -> None:
     """Run a single autonomous content cycle."""
-    agent = DigitalTwinAgent({"recipe": recipe, "persona": persona})
+    agent = DigitalTwinAgent({"pipeline": pipeline, "persona": persona})
     run_result = asyncio.run(agent.run_once(topic))
 
     if run_result.status == "failed":
