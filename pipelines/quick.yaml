@@ -1,18 +1,11 @@
 name: "极速模式"
-description: "个人创作者日更，5分钟出稿。KB检索 → 生成 → Humanizer → 审核 → 发布"
+description: "个人创作者日更，5分钟出稿"
+topic_selection: true
 stages:
   - plugin: research.kb_retrieve
     config:
-      top_k: 5
+      top_k: 10
   - plugin: generation.article
-    hooks:
-      before:
-        - hook: intelligence.trending_inject
-          config: { source: zhihu }
-        - hook: safety.prompt_guard
-      after:
-        - hook: intelligence.seo_analyze
-        - hook: safety.content_scan
   - plugin: quality.humanizer
     config:
       min_score: 0.35
@@ -21,11 +14,5 @@ stages:
     config:
       on_fail: regenerate
   - plugin: publish.multiplatform
-    hooks:
-      before:
-        - hook: media.image_gen
-          config: { provider: openai, style: "flat illustration, warm tones", count: 2, cover: true }
-      after:
-        - hook: webhook.notify
     config:
       platforms: [xiaohongshu]
