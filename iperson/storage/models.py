@@ -52,11 +52,10 @@ class KbDocRecord(BaseModel):
 
 
 class KbChunkRecord(BaseModel):
-    """Represents a chunk of a knowledge base document with optional embedding."""
+    """Represents a chunk of a knowledge base document."""
 
     id: str
     kb_doc_id: str
     chunk_index: int
     content: str
-    embedding: bytes | None = None
     created_at: datetime | None = None

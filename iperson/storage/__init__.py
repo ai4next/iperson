@@ -56,7 +56,6 @@ def init_db() -> None:
                 kb_doc_id TEXT NOT NULL,
                 chunk_index INTEGER NOT NULL,
                 content TEXT NOT NULL,
-                embedding BLOB,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (kb_doc_id) REFERENCES kb_docs(id)
             );
@@ -91,6 +90,13 @@ def init_db() -> None:
         try:
             conn.execute("ALTER TABLE contents ADD COLUMN pipeline_name TEXT")
             conn.execute("UPDATE contents SET pipeline_name = recipe_name WHERE pipeline_name IS NULL")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Migration: drop embedding column from kb_chunks if it exists (SQLite 3.35+)
+        try:
+            conn.execute("ALTER TABLE kb_chunks DROP COLUMN embedding")
             conn.commit()
         except Exception:
             pass

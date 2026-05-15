@@ -15,7 +15,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "provider": "openai",
         "api_key": "",
         "model": "gpt-4o",
-        "embedding_model": "text-embedding-3-small",
     },
     "providers": [
         {"stage": "default", "provider": "openai", "model": "gpt-4o", "temperature": 0.7},

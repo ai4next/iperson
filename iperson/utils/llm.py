@@ -5,13 +5,12 @@ import hashlib
 from functools import lru_cache
 from typing import Any, TypeVar
 
-import numpy as np
 from langchain_anthropic import ChatAnthropic
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 
 from iperson.config import get_provider_for_stage
 
@@ -52,24 +51,9 @@ def get_llm(stage: str = "default") -> BaseChatModel:
     )
 
 
-@lru_cache(maxsize=4)
-def get_embedding(
-    model: str = "text-embedding-3-small",
-    api_key: str = "",
-) -> OpenAIEmbeddings:
-    """Get a cached OpenAI embeddings instance."""
-    from iperson.config import load_config
-
-    cfg = load_config()
-    llm_cfg = cfg.get("llm", {})
-    key = api_key or (isinstance(llm_cfg, dict) and llm_cfg.get("api_key", "")) or None
-    return OpenAIEmbeddings(model=model, api_key=key)
-
-
 def clear_llm_cache() -> None:
-    """Clear all cached LLM and embedding instances."""
+    """Clear all cached LLM instances."""
     _cached_llm.cache_clear()
-    get_embedding.cache_clear()
 
 
 T = TypeVar("T")
@@ -143,32 +127,3 @@ class DummyLLM(BaseChatModel):
         combined = " ".join(m.content if isinstance(m.content, str) else "" for m in messages)
         h = hashlib.sha256(combined.encode()).hexdigest()[:32]
         return f"Dummy response for hash: {h}"
-
-
-class DummyEmbeddings:
-    """A fake embedder that returns deterministic vectors for testing."""
-
-    def __init__(self, dimension: int = 1536) -> None:
-        self.dimension = dimension
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._make_vector(text)
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._make_vector(t) for t in texts]
-
-    async def aembed_query(self, text: str) -> list[float]:
-        return self._make_vector(text)
-
-    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._make_vector(t) for t in texts]
-
-    def _make_vector(self, text: str) -> list[float]:
-        if not text.strip():
-            return [0.0] * self.dimension
-        h = hashlib.sha256(text.encode()).digest()
-        rng = np.frombuffer(h, dtype=np.uint8).astype(np.float32)
-        rng = (rng / 127.5) - 1.0
-        if len(rng) < self.dimension:
-            rng = np.tile(rng, self.dimension // len(rng) + 1)[:self.dimension]
-        return rng[:self.dimension].tolist()
