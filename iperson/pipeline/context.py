@@ -27,8 +27,6 @@ class PipelineContext:
         self.kb_chunks: list[dict[str, Any]] = []
         self.kb_context: str = ""
         self.generated_content: str = ""
-        self.humanized_content: str = ""
-        self.audit_result: dict[str, Any] = {}
         self.publish_results: list[dict[str, Any]] = []
         self.platform_contents: dict[str, str] = {}
 
@@ -52,8 +50,6 @@ class PipelineContext:
             "kb_chunks": deepcopy(self.kb_chunks),
             "kb_context": self.kb_context,
             "generated_content": self.generated_content,
-            "humanized_content": self.humanized_content,
-            "audit_result": deepcopy(self.audit_result),
             "publish_results": deepcopy(self.publish_results),
             "platform_contents": deepcopy(self.platform_contents),
             "data": deepcopy(self.data),
@@ -76,8 +72,6 @@ class PipelineContext:
         ctx.kb_chunks = deepcopy(snapshot.get("kb_chunks", []))
         ctx.kb_context = snapshot.get("kb_context", "")
         ctx.generated_content = snapshot.get("generated_content", "")
-        ctx.humanized_content = snapshot.get("humanized_content", "")
-        ctx.audit_result = deepcopy(snapshot.get("audit_result", {}))
         ctx.publish_results = deepcopy(snapshot.get("publish_results", []))
         ctx.platform_contents = deepcopy(snapshot.get("platform_contents", {}))
         ctx.data = deepcopy(snapshot.get("data", {}))
