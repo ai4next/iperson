@@ -68,7 +68,7 @@ class TestPipelineContext:
         ctx = PipelineContext(persona_name="persona-1", topic="Python")
         assert ctx.persona_name == "persona-1"
         assert ctx.topic == "Python"
-        assert ctx.recipe_name == "quick"
+        assert ctx.pipeline_name == "quick"
         assert ctx.status == "running"
         assert ctx.content_id is None
         assert ctx.kb_chunks == []
@@ -87,12 +87,12 @@ class TestPipelineContext:
         ctx = PipelineContext(
             persona_name="persona-2",
             topic="Go",
-            recipe_name="full",
+            pipeline_name="full",
             content_id="content-123",
         )
         assert ctx.persona_name == "persona-2"
         assert ctx.topic == "Go"
-        assert ctx.recipe_name == "full"
+        assert ctx.pipeline_name == "full"
         assert ctx.content_id == "content-123"
 
     def test_snapshot_roundtrip(self) -> None:
@@ -110,7 +110,7 @@ class TestPipelineContext:
         assert restored.id == ctx.id
         assert restored.persona_name == ctx.persona_name
         assert restored.topic == ctx.topic
-        assert restored.recipe_name == ctx.recipe_name
+        assert restored.pipeline_name == ctx.pipeline_name
         assert restored.content_id == ctx.content_id
         assert restored.status == ctx.status
         assert restored.kb_context == ctx.kb_context
@@ -134,7 +134,7 @@ class TestPipelineContext:
         restored = PipelineContext.from_snapshot({})
         assert restored.persona_name == ""
         assert restored.topic == ""
-        assert restored.recipe_name == "quick"
+        assert restored.pipeline_name == "quick"
         assert restored.content_id is None
         assert restored.status == "running"
 

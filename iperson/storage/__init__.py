@@ -86,5 +86,13 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Migration: add pipeline_name column to contents table
+        try:
+            conn.execute("ALTER TABLE contents ADD COLUMN pipeline_name TEXT")
+            conn.execute("UPDATE contents SET pipeline_name = recipe_name WHERE pipeline_name IS NULL")
+            conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()

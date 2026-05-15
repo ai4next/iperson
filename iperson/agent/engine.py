@@ -23,7 +23,7 @@ class DigitalTwinAgent:
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
-        self.default_recipe = self.config.get("recipe", "quick")
+        self.default_pipeline = self.config.get("pipeline", "quick")
         self.default_persona = self.config.get("persona", "default")
 
     async def run_once(self, topic: str) -> AgentRun:
@@ -39,7 +39,7 @@ class DigitalTwinAgent:
 
         run = AgentRun(
             topic=topic,
-            recipe=self.default_recipe,
+            recipe=self.default_pipeline,
             persona=self.default_persona,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
@@ -49,12 +49,12 @@ class DigitalTwinAgent:
             init_db()
 
             llm_client = get_llm("generation")
-            recipe_data = load_pipeline(self.default_recipe)
+            recipe_data = load_pipeline(self.default_pipeline)
 
             registry = PluginRegistry()
             register_builtin_plugins(registry)
 
-            ctx = PipelineContext(topic=topic, recipe_name=self.default_recipe)
+            ctx = PipelineContext(topic=topic, pipeline_name=self.default_pipeline)
             ctx.data["llm_client"] = llm_client
             ctx.data["platform"] = self.config.get("platform", "xiaohongshu")
 

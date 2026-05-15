@@ -11,7 +11,7 @@ class ContentRecord(BaseModel):
 
     id: str
     persona_name: str | None = None
-    recipe_name: str | None = None
+    pipeline_name: str | None = None
     topic: str = ""
     title: str = ""
     content_type: str = ""

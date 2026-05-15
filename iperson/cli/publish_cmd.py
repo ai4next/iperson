@@ -53,7 +53,7 @@ def run(
 
 async def _run_pipeline(
     topic: str,
-    recipe_name: str,
+    pipeline_name: str,
     persona_name: str,
     platform: str,
     verbose: bool,
@@ -68,12 +68,12 @@ async def _run_pipeline(
 
     # Load recipe
     try:
-        recipe_data = load_pipeline(recipe_name)
+        recipe_data = load_pipeline(pipeline_name)
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
     if verbose:
-        console.print(f"[dim]Loaded recipe:[/dim] {recipe_data.get('name', recipe_name)}")
+        console.print(f"[dim]Loaded recipe:[/dim] {recipe_data.get('name', pipeline_name)}")
 
     # Load or create persona
     persona_profile = load_persona(persona_name or "default")
@@ -99,7 +99,7 @@ async def _run_pipeline(
     ctx = PipelineContext(
         persona_name=persona_profile.name,
         topic=topic,
-        recipe_name=recipe_name,
+        pipeline_name=pipeline_name,
     )
     ctx.data["llm_client"] = llm_client
     ctx.data["persona_engine"] = persona_engine
