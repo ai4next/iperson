@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import numpy as np
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -10,6 +11,8 @@ from rich.table import Table
 from rich.text import Text
 
 from iperson.config import ensure_data_dirs
+from iperson.core.kb.embedder import OpenAIEmbedder
+from iperson.core.kb.vector_store import VectorStore
 from iperson.core.persona.engine import PersonaEngine
 from iperson.core.persona.profile import (
     create_default_persona,
@@ -21,6 +24,7 @@ from iperson.pipeline.plugins import register_builtin_plugins
 from iperson.pipeline.recipe import load_recipe
 from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
+from iperson.storage.db import get_connection
 from iperson.utils.llm import get_llm
 from iperson.utils.output import (
     create_output_dir,
@@ -104,6 +108,12 @@ async def _run_pipeline(
     ctx.data["persona_engine"] = persona_engine
     ctx.data["platform"] = platform
 
+    # Load KB context via vector search
+    try:
+        ctx = await _load_kb_context(ctx, topic)
+    except Exception as e:
+        console.print(f"[yellow]Warning:[/yellow] KB retrieval failed ({e}), continuing without KB grounding.")
+
     # Run pipeline
     orchestrator = PipelineOrchestrator(registry)
     if verbose:
@@ -131,6 +141,40 @@ async def _run_pipeline(
 
     # Display results
     _show_results(result, out_dir, verbose)
+
+
+async def _load_kb_context(ctx: PipelineContext, topic: str) -> PipelineContext:
+    """Load relevant KB chunks via vector search and set on pipeline context."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """SELECT c.id, c.content, c.chunk_index, c.embedding, d.title as doc_title
+               FROM kb_chunks c
+               JOIN kb_docs d ON c.kb_doc_id = d.id
+               WHERE c.embedding IS NOT NULL
+               ORDER BY c.created_at DESC"""
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return ctx
+
+    vs = VectorStore()
+    for row in rows:
+        emb = np.frombuffer(row["embedding"], dtype=np.float64).tolist()
+        vs.add(emb, {
+            "text": row["content"],
+            "metadata": {},
+            "doc_title": row["doc_title"],
+        })
+
+    embedder = OpenAIEmbedder()
+    query_vector = await embedder.embed(topic)
+    results = vs.search(query_vector, top_k=5)
+
+    ctx.kb_chunks = results
+    return ctx
 
 
 def _show_results(ctx: PipelineContext, out_dir: Path, verbose: bool) -> None:
@@ -286,3 +330,98 @@ def _show_results(ctx: PipelineContext, out_dir: Path, verbose: bool) -> None:
         console.print("[bold red]Errors:[/bold red]")
         for err in ctx.errors:
             console.print(f"  - [red]{err.get('stage', '?')}:[/red] {err.get('error', '?')}")
+
+
+@publish_group.command()
+def status(
+    publication_id: str = typer.Argument(None, help="Publication ID (optional)"),
+) -> None:
+    """View publication queue status."""
+    from iperson.publish.engine import PublishEngine
+
+    engine = PublishEngine()
+    if publication_id:
+        pubs = [p for p in engine.list_publications() if p["id"] == publication_id]
+    else:
+        pubs = engine.list_publications()
+
+    if not pubs:
+        console.print("[yellow]No publications found.[/yellow]")
+        raise typer.Exit()
+
+    table = Table(title="Publication Queue")
+    table.add_column("ID", style="dim")
+    table.add_column("Content ID", style="cyan")
+    table.add_column("Platform", style="magenta")
+    table.add_column("Status")
+    table.add_column("Scheduled At", style="dim")
+    table.add_column("Error", style="red")
+
+    for p in pubs[:20]:
+        status_style = {
+            "draft": "dim",
+            "queued": "yellow",
+            "publishing": "blue",
+            "published": "green",
+            "failed": "red",
+        }.get(p["status"], "white")
+        table.add_row(
+            p["id"][:12],
+            p["content_id"][:12],
+            p["platform"],
+            f"[{status_style}]{p['status']}[/{status_style}]",
+            p.get("scheduled_at", "")[:19] if p.get("scheduled_at") else "-",
+            p.get("error_message", "")[:30] if p.get("error_message") else "-",
+        )
+    console.print(table)
+
+
+@publish_group.command()
+def schedule(
+    publication_id: str = typer.Argument(..., help="Publication ID"),
+    at: str = typer.Option(
+        ...,
+        "--at",
+        help="Scheduled time (ISO format, e.g. 2026-05-16T10:00:00)",
+    ),
+) -> None:
+    """Schedule a publication for later."""
+    from iperson.publish.engine import PublishEngine
+    from iperson.storage.db import get_connection
+
+    engine = PublishEngine()
+    try:
+        engine.update_status(publication_id, "queued")
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE publications SET scheduled_at = ? WHERE id = ?",
+                (at, publication_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        console.print(
+            f"[green]Publication {publication_id[:12]} scheduled at {at}[/green]"
+        )
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@publish_group.command()
+def retry(
+    publication_id: str = typer.Argument(..., help="Publication ID"),
+) -> None:
+    """Retry a failed publication."""
+    from iperson.publish.engine import PublishEngine
+
+    engine = PublishEngine()
+    try:
+        engine.update_status(publication_id, "publishing", error="")
+        console.print(
+            f"[green]Retrying publication {publication_id[:12]}[/green]"
+        )
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
