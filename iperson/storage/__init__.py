@@ -50,6 +50,9 @@ def init_db() -> None:
                 content_id TEXT NOT NULL,
                 platform TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'draft',
+                scheduled_at TEXT,
+                retry_count INTEGER DEFAULT 0,
+                error_message TEXT DEFAULT '',
                 published_at TEXT,
                 metadata TEXT DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -108,5 +111,17 @@ def init_db() -> None:
             );
         """)
         conn.commit()
+
+        # Migration: add new columns to publications table if missing
+        for col, col_type in [
+            ("scheduled_at", "TEXT"),
+            ("retry_count", "INTEGER DEFAULT 0"),
+            ("error_message", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE publications ADD COLUMN {col} {col_type}")
+                conn.commit()
+            except Exception:
+                pass
     finally:
         conn.close()
