@@ -11,6 +11,7 @@ def register_builtin_hooks(registry: HookRegistry) -> None:
     from iperson.pipeline.hooks.image_gen import ImageGenHook
     from iperson.pipeline.hooks.webhook_notify import WebhookNotifyHook
     from iperson.pipeline.hooks.platformize import PlatformizeHook
+    from iperson.pipeline.hooks.humanizer import HumanizerHook
 
     registry.register(TrendingInjectHook)
     registry.register(PromptGuardHook)
@@ -19,6 +20,7 @@ def register_builtin_hooks(registry: HookRegistry) -> None:
     registry.register(ImageGenHook)
     registry.register(WebhookNotifyHook)
     registry.register(PlatformizeHook)
+    registry.register(HumanizerHook)
 
 
 __all__ = ["register_builtin_hooks"]
