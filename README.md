@@ -48,12 +48,14 @@ iperson kb import ./my-articles/
 # 2. 创建人设（定义你的写作风格）
 iperson persona create
 
-# 3. 运行内容管线
-iperson publish run --recipe quick --topic "你的选题"
+# 3. 运行内容管线（自动选题 + 生成 + 发布）
+iperson publish run
 
 # 4. 查看输出
 ls ~/.iperson/output/
 ```
+
+> **说明**：`--topic` 为可选参数。不传时会根据知识库素材和人设自动选题。
 
 ---
 
@@ -120,32 +122,35 @@ export IPERSON_DB_PATH=/custom/path/iperson.db
 
 ---
 
-## 管线与 Recipe
+## 管线与 Pipeline
 
-### 什么是 Recipe？
+### 什么是 Pipeline？
 
-Recipe（配方）是 YAML 格式的管线编排文件，定义内容生产的阶段顺序和每个阶段的配置。系统按 Recipe 定义的阶段依次执行。
+Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的阶段顺序和每个阶段的配置。系统按 Pipeline 定义的阶段依次执行。
 
-### 内置 Recipe
+每个 Pipeline 可以启用 `topic_selection` 字段，开启后自动从知识库素材中匹配最符合人设的选题。
 
-| Recipe | 适用场景 | 阶段数 | 目标平台 |
-|--------|----------|--------|----------|
-| `quick` | 个人日更，5 分钟出稿 | 5 阶段 | 小红书 |
-| `full` | 深度内容创作 | 5 阶段 | 小红书 + 微信 + 知乎 |
-| `trending` | 快速追热点 | 5 阶段（精简审核） | 小红书 |
+### 内置 Pipeline
 
-### Recipe 完整语法
+| Pipeline | 适用场景 | 阶段数 | 自动选题 | 目标平台 |
+|----------|----------|--------|----------|----------|
+| `quick` | 个人日更，5 分钟出稿 | 5 阶段 | ✅ | 小红书 |
+| `full` | 深度内容创作 | 5 阶段 | ✅ | 小红书 + 微信 + 知乎 |
+| `trending` | 快速追热点 | 5 阶段（精简审核） | ✅ | 小红书 |
+
+### Pipeline 完整语法
 
 ```yaml
 name: "极速模式"
 description: "个人创作者日更，5分钟出稿"
+topic_selection: true                       # 启用自动选题
 stages:
   - plugin: research.kb_retrieve
     config:
-      top_k: 5
+      top_k: 10                             # 拉取更多素材供选题筛选
 
   - plugin: generation.article
-    hooks:                          # 可选：阶段钩子
+    hooks:                                  # 可选：阶段钩子
       before:
         - hook: intelligence.trending_inject
           config: { source: zhihu }
@@ -161,7 +166,7 @@ stages:
 
   - plugin: quality.audit
     config:
-      on_fail: regenerate           # abort / skip / flag / regenerate
+      on_fail: regenerate                   # abort / skip / flag / regenerate
 
   - plugin: publish.multiplatform
     hooks:
@@ -174,16 +179,16 @@ stages:
       platforms: [xiaohongshu]
 ```
 
-### 自定义 Recipe
+### 自定义 Pipeline
 
-将 YAML 文件放入 `~/.iperson/data/recipes/` 即可：
+将 YAML 文件放入 `~/.iperson/data/pipelines/` 即可：
 
 ```bash
-mkdir -p ~/.iperson/data/recipes
-vim ~/.iperson/data/recipes/my-recipe.yaml
+mkdir -p ~/.iperson/data/pipelines
+vim ~/.iperson/data/pipelines/my-pipeline.yaml
 ```
 
-然后通过 `--recipe my-recipe` 引用。
+然后通过 `--pipeline my-pipeline` 引用。
 
 ---
 
@@ -202,9 +207,9 @@ vim ~/.iperson/data/recipes/my-recipe.yaml
 | `media.image_gen` | `before.publish` | 调用 DALL-E 生成封面和内文配图 | `provider`, `style`, `count`, `cover` |
 | `webhook.notify` | `after.publish` | 管线完成后发送 HTTP 通知（HMAC-SHA256 签名） | 从 `config.yaml` 读取 `webhooks` 配置 |
 
-### 在 Recipe 中配置钩子
+### 在 Pipeline 中配置钩子
 
-钩子在 Recipe 的 `hooks` 字段中配置，分为 `before` 和 `after`：
+钩子在 Pipeline 的 `hooks` 字段中配置，分为 `before` 和 `after`：
 
 ```yaml
 stages:
@@ -259,7 +264,7 @@ class MyCustomHook(BaseHook):
     description = "Does something useful"
 
     async def execute(self, ctx: HookContext) -> HookContext:
-        # 读取配置（来自 recipe 中 hooks 字段的 config）
+        # 读取配置（来自 pipeline 中 hooks 字段的 config）
         param = ctx.config.get("param", "default")
         # 操作管线上下文
         ctx.pipeline_ctx.data["my_result"] = param
@@ -325,7 +330,7 @@ class MyPlugin(StagePlugin):
         return ctx
 ```
 
-然后在 Recipe 中引用：
+然后在 Pipeline 中引用：
 
 ```yaml
 stages:
@@ -338,7 +343,7 @@ stages:
 
 | 命令 | 说明 |
 |------|------|
-| `iperson publish run` | 运行内容生产管线（核心命令） |
+| `iperson publish run` | 运行内容生产管线，支持自动选题（核心命令） |
 | `iperson publish status` | 查看发布队列状态 |
 | `iperson publish schedule` | 设置定时发布 |
 | `iperson publish retry` | 重试失败的发布 |
@@ -361,32 +366,34 @@ stages:
 ### `iperson publish run` 完整选项
 
 ```bash
-iperson publish run <TOPIC>                # 内容主题（必填）
-  --recipe, -r  <name>                     # Recipe 名称，默认 "quick"
-  --persona, -p <name>                     # 人设名称
-  --platform     <name>                    # 目标平台，默认 "xiaohongshu"
-  --verbose                                # 显示详细输出（含插件注册、阶段耗时、内容预览等）
+iperson publish run [TOPIC]                  # 内容主题（可选，留空则自动选题）
+  --pipeline, -r  <name>                     # Pipeline 名称，默认 "quick"
+  --persona, -p    <name>                    # 人设名称
+  --platform       <name>                    # 目标平台，默认 "xiaohongshu"
+  --verbose                                  # 显示详细输出（含插件注册、阶段耗时、内容预览等）
 ```
 
 ## 管线架构
 
-内容生产采用 **插件化管线** 架构，每个阶段由 YAML Recipe 灵活编排：
+内容生产采用 **插件化管线** 架构，支持可选的内置自动选题阶段，由 YAML Pipeline 灵活编排：
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Pipeline                             │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐         │
-│  │  Research   │→ │ Generation │→ │  Quality   │         │
-│  │  素材检索    │  │  内容生成   │  │  质量把关   │         │
-│  └────────────┘  └────────────┘  └────────────┘         │
-│                        │                                 │
-│                        ↓                                 │
-│  ┌────────────┐  ┌────────────┐                          │
-│  │  Publish   │← │   Human    │                          │
-│  │  多平台发布  │  │   Review   │                          │
-│  └────────────┘  │  人工审核   │                          │
-│                   └────────────┘                          │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                       Pipeline                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐         │
+│  │   Research   │→ │    Topic     │→ │ Generation │         │
+│  │   素材检索     │  │   Selection  │  │  内容生成    │         │
+│  │              │  │   (可选自动   │  │            │         │
+│  │              │  │   选题+人设)  │  │            │         │
+│  └──────────────┘  └──────────────┘  └────────────┘         │
+│                                           │                  │
+│                                           ↓                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐         │
+│  │   Publish    │← │    Human     │← │  Quality   │         │
+│  │  多平台发布    │  │    Review    │  │  质量把关   │         │
+│  │              │  │   人工审核    │  │            │         │
+│  └──────────────┘  └──────────────┘  └────────────┘         │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 内置阶段插件
@@ -399,25 +406,26 @@ iperson publish run <TOPIC>                # 内容主题（必填）
 | Quality | `quality.audit` | 多维度质量审核（子指标评分 + 加权综合 + 改进建议） |
 | Publish | `publish.multiplatform` | 多平台格式适配与内容导出 |
 
-管线支持 CircuitBreaker 熔断保护、Recipe 预校验、on_error 策略（abort/skip）。
+管线支持 CircuitBreaker 熔断保护、Pipeline 预校验、on_error 策略（abort/skip）。
 
-### Recipes（内容配方）
+### Pipelines（内容管线）
 
-通过 YAML 编排各阶段插件及其配置。内置三种 Recipes：
+通过 YAML 编排各阶段插件及其配置。内置三种 Pipelines，均默认启用自动选题：
 
-- **完整模式** (`full.yaml`) — 深度内容：KB搜索(10条) → 生成 → 人味化 → 审核 → 三平台发布
-- **极速模式** (`quick.yaml`) — 个人日更，5分钟出稿：KB搜索(5条) → 生成 → 人味化 → 审核 → 小红书发布
+- **完整模式** (`full.yaml`) — 深度内容：KB搜索(10条) → 自动选题(人设匹配) → 生成 → 人味化 → 审核 → 三平台发布
+- **极速模式** (`quick.yaml`) — 个人日更，5分钟出稿：KB搜索(10条) → 自动选题(人设匹配) → 生成 → 人味化 → 审核 → 小红书发布
 - **热点追稿** (`trending.yaml`) — 快速追热点，精简审核维度，失败仅标记不阻塞
 
-Recipe 示例（`quick.yaml`）：
+Pipeline 示例（`quick.yaml`）：
 
 ```yaml
 name: "极速模式"
 description: "个人创作者日更，5分钟出稿"
+topic_selection: true
 stages:
   - plugin: research.kb_retrieve
     config:
-      top_k: 5
+      top_k: 10
   - plugin: generation.article
   - plugin: quality.humanizer
     config:
@@ -514,7 +522,7 @@ iperson persona list
 
 ### 多平台发布 (`publish.multiplatform`)
 
-基于 Recipe 编排的最终阶段，将生成内容适配为目标平台格式：
+基于 Pipeline 编排的最终阶段，将生成内容适配为目标平台格式：
 
 - 支持小红书（`xiaohongshu`）、微信公众号（`wechat`）、知乎（`zhihu`）
 - 平台内容输出到 `output/{timestamp}-{topic}/platforms/{platform}.md`
@@ -581,7 +589,7 @@ uv run pytest tests/test_pipeline.py -v
 uv run pytest tests/test_audit_gate.py -v
 ```
 
-当前测试覆盖范围：管线编排（含 CircuitBreaker 熔断）、插件注册、Recipe 校验、知识库检索/分块/混合搜索、内容生成、人味化（检测/评分/改写）、人设引擎、质量审核门控（含加权评分）、LLM 路由、集成测试。
+当前测试覆盖范围：管线编排（含 CircuitBreaker 熔断）、插件注册、Pipeline 校验、知识库检索/分块/混合搜索、内容生成、人味化（检测/评分/改写）、人设引擎、自动选题、质量审核门控（含加权评分）、LLM 路由、集成测试。
 
 ## 路线图
 
@@ -603,8 +611,11 @@ uv run pytest
 uv run ruff check .
 uv run mypy iperson/
 
-# 运行管线（dry-run 模式）
-uv run iperson publish run --recipe quick --topic "示例选题" --verbose
+# 运行管线（自动选题模式）
+uv run iperson publish run --verbose
+
+# 或指定选题和管线
+uv run iperson publish run "示例选题" --pipeline quick --verbose
 ```
 
 ## 项目结构
@@ -612,7 +623,7 @@ uv run iperson publish run --recipe quick --topic "示例选题" --verbose
 ```
 iperson/
 ├── pyproject.toml              # 项目元数据与依赖
-├── recipes/                    # 内置 Recipe YAML
+├── pipelines/                   # 内置 Pipeline YAML
 │   ├── full.yaml
 │   ├── quick.yaml
 │   └── trending.yaml
@@ -632,7 +643,7 @@ iperson/
 │   ├── pipeline/               # 管线引擎
 │   │   ├── orchestrator.py    # PipelineOrchestrator
 │   │   ├── context.py         # PipelineContext（状态传递）
-│   │   ├── recipe.py          # Recipe 加载与验证
+│   │   ├── pipeline.py          # Pipeline 加载与验证
 │   │   ├── registry.py        # 插件注册表
 │   │   ├── plugin.py          # StagePlugin 基类
 │   │   ├── loader.py          # FilePluginLoader / PipPluginLoader

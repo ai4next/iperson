@@ -11,6 +11,8 @@ from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.pipeline import load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.plugins import register_builtin_plugins
+from iperson.core.persona.engine import PersonaEngine
+from iperson.core.persona.profile import PersonaProfile
 from iperson.utils.llm import DummyLLM
 
 QUICK_RECIPE = """
@@ -129,3 +131,31 @@ stages:
 
         result = await orchestrator.run(ctx, recipe)
         assert result.audit_result is not None
+
+    @pytest.mark.asyncio
+    async def test_quick_pipeline_with_topic_selection(self) -> None:
+        """Quick pipeline runs with topic_selection enabled and empty topic."""
+        registry = PluginRegistry()
+        register_builtin_plugins(registry)
+        orchestrator = PipelineOrchestrator(registry)
+        recipe = load_pipeline_from_yaml("""
+name: topic-selection-test
+topic_selection: true
+stages:
+  - plugin: generation.article
+""")
+        ctx = PipelineContext(persona_name="test", topic="")
+        ctx.data["llm_client"] = DummyLLM(response="测试生成内容")
+        ctx.data["platform"] = "xiaohongshu"
+        ctx.data["keywords"] = ["test"]
+        ctx.data["persona"] = _make_persona()
+        ctx.data["persona_engine"] = PersonaEngine(
+            PersonaProfile(name="test", soul_content="你是测试助手。专业但不枯燥。")
+        )
+        ctx.kb_context = "AI 技术在2025年的发展趋势分析。"
+
+        result = await orchestrator.run(ctx, recipe)
+
+        assert result.topic != ""
+        assert result.generated_content is not None
+        assert result.status == "completed"
