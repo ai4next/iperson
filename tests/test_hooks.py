@@ -31,3 +31,43 @@ class TestBuiltinHooksRegistration:
         listed = registry.list_hooks()
         hook_ids = [h["hook_id"] for h in listed]
         assert "intelligence.trending_inject" in hook_ids
+
+
+class TestPromptGuardHook:
+    @pytest.mark.asyncio
+    async def test_prompt_guard_blocks_flagged_content(self) -> None:
+        from iperson.pipeline.hooks.prompt_guard import PromptGuardHook
+
+        hook = PromptGuardHook()
+        pctx = PipelineContext(topic="test")
+        pctx.data["persona_engine"] = None
+        ctx = HookContext(
+            pipeline_ctx=pctx, hook_point="before.generation", config={}
+        )
+        result = await hook.execute(ctx)
+        assert "guard_triggered" in result.pipeline_ctx.data
+
+
+class TestContentScanHook:
+    @pytest.mark.asyncio
+    async def test_content_scan_detects_banned_words(self) -> None:
+        from iperson.pipeline.hooks.content_scan import ContentScanHook
+
+        hook = ContentScanHook()
+        pctx = PipelineContext(topic="test")
+        pctx.generated_content = "总的来说，这是一个毋庸置疑的好产品"
+        ctx = HookContext(
+            pipeline_ctx=pctx, hook_point="after.generation", config={}
+        )
+        result = await hook.execute(ctx)
+        assert "scan_result" in result.pipeline_ctx.data
+        assert result.pipeline_ctx.data["scan_result"]["banned_found"]
+
+
+class TestSecurityWordlist:
+    def test_load_blocked_words(self) -> None:
+        from iperson.core.security.wordlist import load_blocked_words
+
+        words = load_blocked_words()
+        assert isinstance(words, list)
+        assert "总的来说" in words
