@@ -49,7 +49,7 @@ class DigitalTwinAgent:
             init_db()
 
             llm_client = get_llm("generation")
-            recipe_data = load_pipeline(self.default_pipeline)
+            pipeline_data = load_pipeline(self.default_pipeline)
 
             registry = PluginRegistry()
             register_builtin_plugins(registry)
@@ -59,7 +59,7 @@ class DigitalTwinAgent:
             ctx.data["platform"] = self.config.get("platform", "xiaohongshu")
 
             orchestrator = PipelineOrchestrator(registry)
-            result = await orchestrator.run(ctx, recipe_data)
+            result = await orchestrator.run(ctx, pipeline_data)
 
             run.content_id = result.id
             run.status = result.status

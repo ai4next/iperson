@@ -35,9 +35,9 @@ class PipelineOrchestrator:
             self.circuit_breakers[plugin_id] = CircuitBreaker(cb_config)
         return self.circuit_breakers[plugin_id]
 
-    async def run(self, ctx: PipelineContext, recipe: dict[str, Any]) -> PipelineContext:
+    async def run(self, ctx: PipelineContext, pipeline: dict[str, Any]) -> PipelineContext:
         """Execute all stages with circuit breaker and error strategy."""
-        stages: list[dict[str, Any]] = recipe.get("stages", [])
+        stages: list[dict[str, Any]] = pipeline.get("stages", [])
 
         # Pre-validation: check all plugin_ids exist
         for stage_def in stages:
