@@ -1,6 +1,5 @@
 name: "default"
 description: "通用内容管线：检索 → 选题 → 生成 → 发布"
-topic_selection: true
 nodes:
   - id: research
     node: research.kb_retrieve

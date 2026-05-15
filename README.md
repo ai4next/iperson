@@ -126,15 +126,13 @@ export IPERSON_DB_PATH=/custom/path/iperson.db
 
 ### 什么是 Pipeline？
 
-Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的阶段顺序和每个阶段的配置。系统按 Pipeline 定义的阶段依次执行。
-
-每个 Pipeline 可以启用 `topic_selection` 字段，开启后自动从知识库素材中匹配最符合人设的选题。
+Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的节点顺序和每个节点的配置。Topic Selection 作为内置节点参与编排。
 
 ### 内置 Pipeline
 
-| Pipeline | 阶段数 | 自动选题 | 默认平台 |
-|----------|--------|----------|----------|
-| `default` | 4 | ✅ | 小红书 + 微信 + 知乎 |
+| Pipeline | 节点数 | 默认平台 |
+|----------|--------|----------|
+| `default` | 4 | 小红书 + 微信 + 知乎 |
 
 差异化通过 hook 配置实现（如调整目标平台、humanizer 参数等）。
 
@@ -143,7 +141,6 @@ Pipeline（管线）是 YAML 格式的编排文件，定义内容生产的阶段
 ```yaml
 name: "default"
 description: "通用内容管线"
-topic_selection: true                       # 启用自动选题
 nodes:
   - id: research
     node: research.kb_retrieve
