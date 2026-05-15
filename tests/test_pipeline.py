@@ -7,7 +7,7 @@ import pytest
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.plugin import StagePlugin
-from iperson.pipeline.recipe import load_recipe_from_yaml
+from iperson.pipeline.pipeline import load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
 
 SAMPLE_RECIPE = """
@@ -212,8 +212,8 @@ class TestPluginRegistry:
 
 
 class TestRecipe:
-    def test_load_recipe_from_yaml(self) -> None:
-        recipe = load_recipe_from_yaml(SAMPLE_RECIPE)
+    def test_load_pipeline_from_yaml(self) -> None:
+        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
         assert recipe["name"] == "test-recipe"
         assert recipe["description"] == "Test recipe"
         assert len(recipe["stages"]) == 2
@@ -231,7 +231,7 @@ name: minimal
 stages:
   - plugin: my.plugin
 """
-        recipe = load_recipe_from_yaml(yaml_str)
+        recipe = load_pipeline_from_yaml(yaml_str)
         assert recipe["stages"][0]["config"] == {}
 
     def test_load_recipe_no_stages(self) -> None:
@@ -239,7 +239,7 @@ stages:
 name: empty-recipe
 description: "No stages"
 """
-        recipe = load_recipe_from_yaml(yaml_str)
+        recipe = load_pipeline_from_yaml(yaml_str)
         assert recipe["name"] == "empty-recipe"
         assert recipe["stages"] == []
 
@@ -249,7 +249,7 @@ stages:
   - plugin: test
 """
         with pytest.raises(ValueError, match="name"):
-            load_recipe_from_yaml(yaml_str)
+            load_pipeline_from_yaml(yaml_str)
 
     def test_load_recipe_missing_plugin_field(self) -> None:
         yaml_str = """
@@ -259,17 +259,17 @@ stages:
       foo: bar
 """
         with pytest.raises(ValueError, match="plugin"):
-            load_recipe_from_yaml(yaml_str)
+            load_pipeline_from_yaml(yaml_str)
 
     def test_load_recipe_not_a_mapping(self) -> None:
         with pytest.raises(ValueError, match="mapping"):
-            load_recipe_from_yaml("hello")
+            load_pipeline_from_yaml("hello")
 
     def test_load_recipe_from_file_not_found(self) -> None:
-        from iperson.pipeline.recipe import load_recipe_from_file
+        from iperson.pipeline.pipeline import load_pipeline_from_file
 
         with pytest.raises(FileNotFoundError, match="not found"):
-            load_recipe_from_file("/nonexistent/recipe.yaml")
+            load_pipeline_from_file("/nonexistent/recipe.yaml")
 
 
 class TestOrchestrator:
@@ -279,7 +279,7 @@ class TestOrchestrator:
         registry.register(StageOne)
         registry.register(StageTwo)
 
-        recipe = load_recipe_from_yaml(SAMPLE_RECIPE)
+        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
         orchestrator = PipelineOrchestrator(registry)
         ctx = PipelineContext(persona_name="p1", topic="Python")
 
@@ -299,7 +299,7 @@ class TestOrchestrator:
         registry.register(FailingStage)
         registry.register(StageTwo)
 
-        recipe = load_recipe_from_yaml(SAMPLE_RECIPE)
+        recipe = load_pipeline_from_yaml(SAMPLE_RECIPE)
         # Replace stage_two with failing stage
         recipe["stages"] = [
             {"plugin": "test.stage_one", "config": {}},
@@ -327,7 +327,7 @@ class TestOrchestrator:
         registry = PluginRegistry()
         registry.register(StageOne)
 
-        recipe = load_recipe_from_yaml(
+        recipe = load_pipeline_from_yaml(
             """
 name: unknown-plugin
 stages:
@@ -376,7 +376,7 @@ stages:
         registry = PluginRegistry()
         registry.register(RetryStage)
 
-        recipe = load_recipe_from_yaml(
+        recipe = load_pipeline_from_yaml(
             """
 name: retry-test
 stages:
@@ -401,7 +401,7 @@ stages:
         registry = PluginRegistry()
         registry.register(FailingStage)
 
-        recipe = load_recipe_from_yaml(
+        recipe = load_pipeline_from_yaml(
             """
 name: retry-fail
 stages:
@@ -425,7 +425,7 @@ stages:
     @pytest.mark.asyncio
     async def test_orchestrator_empty_stages(self) -> None:
         registry = PluginRegistry()
-        recipe = load_recipe_from_yaml(
+        recipe = load_pipeline_from_yaml(
             """
 name: empty
 stages: []
@@ -593,13 +593,13 @@ class TestPipelineHooks:
 
 class TestRecipeHooks:
     def test_recipe_can_include_hooks(self) -> None:
-        from iperson.pipeline.recipe import load_recipe_from_file
+        from iperson.pipeline.pipeline import load_pipeline_from_file
         import os
 
         recipe_path = os.path.join(
-            os.path.dirname(__file__), "..", "recipes", "quick.yaml"
+            os.path.dirname(__file__), "..", "pipelines", "quick.yaml"
         )
-        recipe = load_recipe_from_file(recipe_path)
+        recipe = load_pipeline_from_file(recipe_path)
         stages = recipe.get("stages", [])
         gen_stage = next(
             (s for s in stages if s["plugin"] == "generation.article"), None

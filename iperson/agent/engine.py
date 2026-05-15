@@ -32,7 +32,7 @@ class DigitalTwinAgent:
         from iperson.pipeline.context import PipelineContext
         from iperson.pipeline.orchestrator import PipelineOrchestrator
         from iperson.pipeline.plugins import register_builtin_plugins
-        from iperson.pipeline.recipe import load_recipe
+        from iperson.pipeline.pipeline import load_pipeline
         from iperson.pipeline.registry import PluginRegistry
         from iperson.storage import init_db
         from iperson.utils.llm import get_llm
@@ -49,7 +49,7 @@ class DigitalTwinAgent:
             init_db()
 
             llm_client = get_llm("generation")
-            recipe_data = load_recipe(self.default_recipe)
+            recipe_data = load_pipeline(self.default_recipe)
 
             registry = PluginRegistry()
             register_builtin_plugins(registry)

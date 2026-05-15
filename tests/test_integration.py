@@ -8,7 +8,7 @@ import pytest
 
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
-from iperson.pipeline.recipe import load_recipe_from_yaml
+from iperson.pipeline.pipeline import load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.plugins import register_builtin_plugins
 from iperson.utils.llm import DummyLLM
@@ -50,7 +50,7 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_recipe_from_yaml(QUICK_RECIPE)
+        recipe = load_pipeline_from_yaml(QUICK_RECIPE)
 
         ctx = PipelineContext(persona_name="test", topic="RAG技术入门")
         ctx.data["llm_client"] = DummyLLM(
@@ -80,7 +80,7 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_recipe_from_yaml(QUICK_RECIPE)
+        recipe = load_pipeline_from_yaml(QUICK_RECIPE)
 
         ctx = PipelineContext(persona_name="test", topic="通用话题")
         ctx.data["llm_client"] = DummyLLM(response="Some content.")
@@ -97,7 +97,7 @@ class TestQuickRecipeIntegration:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_recipe_from_yaml("""
+        recipe = load_pipeline_from_yaml("""
 name: humanizer-test
 stages:
   - plugin: quality.humanizer
@@ -118,7 +118,7 @@ stages:
         registry = PluginRegistry()
         register_builtin_plugins(registry)
         orchestrator = PipelineOrchestrator(registry)
-        recipe = load_recipe_from_yaml("""
+        recipe = load_pipeline_from_yaml("""
 name: audit-test
 stages:
   - plugin: quality.audit

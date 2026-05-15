@@ -22,7 +22,7 @@ from iperson.core.persona.profile import (
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
 from iperson.pipeline.plugins import register_builtin_plugins
-from iperson.pipeline.recipe import load_recipe
+from iperson.pipeline.pipeline import load_pipeline, load_pipeline_from_yaml
 from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
@@ -68,7 +68,7 @@ async def _run_pipeline(
 
     # Load recipe
     try:
-        recipe_data = load_recipe(recipe_name)
+        recipe_data = load_pipeline(recipe_name)
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
