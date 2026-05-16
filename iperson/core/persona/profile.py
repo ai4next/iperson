@@ -19,7 +19,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "agent": {
                     "prompt": "~/.iperson/prompts/research.md",
                     "model": "openai:gpt-4o",
-                    "skills": [],
+                    "skills": ["~/.iperson/skills/research/"],
                 },
             },
             {
@@ -27,7 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "agent": {
                     "prompt": "~/.iperson/prompts/generate.md",
                     "model": "anthropic:claude-sonnet-4-6",
-                    "skills": [],
+                    "skills": ["~/.iperson/skills/writing/"],
                 },
                 "hooks": {
                     "after": [
@@ -40,7 +40,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "agent": {
                     "prompt": "~/.iperson/prompts/publish.md",
                     "model": "openai:gpt-4o",
-                    "skills": [],
+                    "skills": ["~/.iperson/skills/publish/"],
                 },
                 "config": {"platforms": ["xiaohongshu", "wechat", "zhihu"]},
             },
