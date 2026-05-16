@@ -9,6 +9,7 @@ from iperson.pipeline.hook import HookRegistry
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.state import PipelineState
 from iperson.core.persona.engine import PersonaEngine
+from iperson.pipeline.agent_factory import build_agent_node
 
 
 class PipelineOrchestrator:
@@ -23,17 +24,7 @@ class PipelineOrchestrator:
         self.hook_registry = hook_registry or HookRegistry()
 
     async def _auto_select_topic(self, ctx: PipelineContext, pipeline: dict[str, Any]) -> PipelineContext:
-        """Select a topic from KB context using persona and LLM."""
-        if not ctx.kb_context:
-            ctx.errors.append({
-                "error_code": "TOPIC_SELECTION_FAILED",
-                "stage": "topic_selection",
-                "message": "No KB context available for topic selection. Import KB docs first.",
-                "recoverable": False,
-            })
-            ctx.status = "completed_with_errors"
-            return ctx
-
+        """Select a topic from KB context or LLM knowledge using persona."""
         persona_engine: PersonaEngine | None = ctx.data.get("persona_engine")
         if persona_engine is None:
             ctx.errors.append({
@@ -56,18 +47,29 @@ class PipelineOrchestrator:
             ctx.status = "completed_with_errors"
             return ctx
 
-        prompt = (
-            f"你是一位内容选题助手。以下是人设信息：\n"
-            f"---\n"
-            f"{persona_engine.build_system_prompt()}\n"
-            f"---\n"
-            f"以下是知识库素材：\n"
-            f"---\n"
-            f"{ctx.kb_context}\n"
-            f"---\n"
-            f"请从以上素材中，选择一个最符合上述人设的创作选题。\n"
-            f"只输出选题标题，不要多余内容。"
-        )
+        if ctx.kb_context:
+            prompt = (
+                f"你是一位内容选题助手。以下是人设信息：\n"
+                f"---\n"
+                f"{persona_engine.build_system_prompt()}\n"
+                f"---\n"
+                f"以下是知识库素材：\n"
+                f"---\n"
+                f"{ctx.kb_context}\n"
+                f"---\n"
+                f"请从以上素材中，选择一个最符合上述人设的创作选题。\n"
+                f"只输出选题标题，不要多余内容。"
+            )
+        else:
+            prompt = (
+                f"你是一位内容选题助手。以下是人设信息：\n"
+                f"---\n"
+                f"{persona_engine.build_system_prompt()}\n"
+                f"---\n"
+                f"请结合你的知识储备，为该人设推荐一个适合创作的内容选题。\n"
+                f"选题应贴合人设定位，具有吸引力和传播力。\n"
+                f"只输出选题标题，不要多余内容。"
+            )
 
         messages = [{"role": "user", "content": prompt}]
         response = await llm.ainvoke(messages)
@@ -111,6 +113,7 @@ class PipelineOrchestrator:
             plugin_registry=self.registry,
             hook_registry=self.hook_registry,
             initial_state=initial_state,
+            agent_factory=build_agent_node,
         )
 
         # Write state back to context
