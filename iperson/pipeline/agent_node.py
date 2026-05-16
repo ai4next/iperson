@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -120,8 +121,42 @@ def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
     return read_pipeline
 
 
+class AgentCache:
+    """Cache compiled deep agents by config fingerprint.
+
+    Key: (model, system_prompt_hash, skills_tuple)
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple, Any] = {}
+
+    async def get_or_create(
+        self,
+        key: tuple,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        if key not in self._cache:
+            self._cache[key] = await factory()
+        return self._cache[key]
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+
+def config_key(
+    model: str | None,
+    system_prompt: str,
+    skills_sources: tuple[str, ...],
+) -> tuple:
+    """Build a cache key tuple from node config."""
+    prompt_hash = hashlib.sha256(system_prompt.encode()).hexdigest()[:16]
+    return (model or "", prompt_hash, skills_sources)
+
+
 __all__ = [
     "DeepAgentNode",
     "_extract_json",
     "make_read_pipeline_tool",
+    "AgentCache",
+    "config_key",
 ]

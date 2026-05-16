@@ -137,3 +137,71 @@ async def test_extract_json_no_json_returns_none() -> None:
 
     result = _extract_json("Just plain text without JSON")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_agent_cache_hit_returns_same_instance() -> None:
+    """AgentCache should return the same instance for same config."""
+    from iperson.pipeline.agent_node import AgentCache
+
+    cache = AgentCache()
+    factory_call_count = 0
+
+    async def factory():
+        nonlocal factory_call_count
+        factory_call_count += 1
+        return "agent-instance"
+
+    key = ("gpt-4o", "hash1", ("path/a", "path/b"))
+    a = await cache.get_or_create(key, factory)
+    b = await cache.get_or_create(key, factory)
+
+    assert a is b
+    assert factory_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_cache_different_key_creates_new() -> None:
+    from iperson.pipeline.agent_node import AgentCache
+
+    cache = AgentCache()
+
+    async def make_a():
+        return "a"
+
+    async def make_b():
+        return "b"
+
+    a = await cache.get_or_create(("model-a", "", ()), make_a)
+    b = await cache.get_or_create(("model-b", "", ()), make_b)
+
+    assert a == "a"
+    assert b == "b"
+
+
+@pytest.mark.asyncio
+async def test_agent_cache_clear() -> None:
+    from iperson.pipeline.agent_node import AgentCache
+
+    cache = AgentCache()
+    key = ("m", "h", ("s",))
+
+    async def factory():
+        return object()
+
+    a = await cache.get_or_create(key, factory)
+    cache.clear()
+    b = await cache.get_or_create(key, factory)
+
+    assert a is not b
+
+
+def test_config_key_includes_model_prompt_and_skills() -> None:
+    from iperson.pipeline.agent_node import config_key
+
+    key = config_key("gpt-4o", "You are a test agent", ("sk1", "sk2"))
+    assert len(key) == 3
+    assert key[0] == "gpt-4o"
+    assert isinstance(key[1], str)
+    assert len(key[1]) == 16  # sha256 hex[:16]
+    assert key[2] == ("sk1", "sk2")
