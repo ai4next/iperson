@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 
 
-def make_read_pipeline_tool(state: dict[str, Any]) -> tool:
+def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
     """Create a read_pipeline tool bound to the given pipeline state dict.
 
     The returned tool is a LangChain BaseTool that reads fields from the
