@@ -205,3 +205,49 @@ def test_config_key_includes_model_prompt_and_skills() -> None:
     assert isinstance(key[1], str)
     assert len(key[1]) == 16  # sha256 hex[:16]
     assert key[2] == ("sk1", "sk2")
+
+
+@pytest.mark.asyncio
+async def test_read_pipeline_via_state_ref_reflects_updates() -> None:
+    """StateRef should allow read_pipeline to see updated state."""
+    from iperson.pipeline.agent_node import StateRef, make_read_pipeline_tool
+
+    ref = StateRef()
+    ref.set({"topic": "initial"})
+    tool = make_read_pipeline_tool(ref)
+
+    result1 = await tool.ainvoke({"key": "topic"})
+    assert result1 == "initial"
+
+    ref.set({"topic": "updated"})
+    result2 = await tool.ainvoke({"key": "topic"})
+    assert result2 == "updated"
+
+
+@pytest.mark.asyncio
+async def test_deep_agent_node_with_state_ref_syncs_state() -> None:
+    """DeepAgentNode should sync state to StateRef before calling agent."""
+    from iperson.pipeline.agent_node import DeepAgentNode, StateRef
+
+    captured: list[dict] = []
+
+    async def capturing_ainvoke(inputs: dict) -> dict:
+        # The agent would call read_pipeline here, but we capture instead
+        captured.append(dict(inputs))
+        return {"messages": [AIMessage(content='{"generated_content": "ok"}')]}
+
+    ref = StateRef()
+    ref.set({"topic": "before"})  # initial stale value
+
+    node = DeepAgentNode(
+        node_id="test",
+        agent_ainvoke=capturing_ainvoke,
+        system_prompt="test",
+        state_ref=ref,
+    )
+
+    state = _make_state(topic="live-topic")
+    await node(state)
+
+    # After __call__, the ref should point to the live state
+    assert ref.get()["topic"] == "live-topic"

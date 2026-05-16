@@ -12,6 +12,7 @@ from deepagents.middleware.skills import SkillsMiddleware
 from iperson.pipeline.agent_node import (
     AgentCache,
     DeepAgentNode,
+    StateRef,
     config_key,
     make_read_pipeline_tool,
 )
@@ -76,13 +77,15 @@ def build_agent_node(
         tuple(s[0] for s in skill_sources),
     )
 
+    state_ref = StateRef()
+
     async def _build_agent() -> Any:
         """Create and return a compiled deep agent."""
         agent = create_deep_agent(
             model=model,
             system_prompt=system_prompt,
             middleware=middleware,
-            tools=[make_read_pipeline_tool({})],
+            tools=[make_read_pipeline_tool(state_ref)],
         )
         return agent
 
@@ -98,6 +101,7 @@ def build_agent_node(
             "output_keys",
             ["kb_context", "generated_content", "platform_contents", "publish_results"],
         ),
+        state_ref=state_ref,
     )
 
 

@@ -12,6 +12,23 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool, tool
 
 
+class StateRef:
+    """Mutable reference to the current pipeline state dict.
+
+    Allows a tool function to read the live state even when the enclosing
+    agent is compiled once and cached across runs.
+    """
+
+    def __init__(self) -> None:
+        self._state: dict[str, Any] = {}
+
+    def set(self, state: dict[str, Any]) -> None:
+        self._state = state
+
+    def get(self) -> dict[str, Any]:
+        return self._state
+
+
 def _extract_json(text: str) -> dict[str, Any] | None:
     """Extract the first JSON object from agent response text."""
     match = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
@@ -48,10 +65,12 @@ class DeepAgentNode:
         agent_ainvoke: Callable[[dict], Awaitable[dict]],
         system_prompt: str,
         allowed_output_keys: list[str] | None = None,
+        state_ref: StateRef | None = None,
     ) -> None:
         self.node_id = node_id
         self._agent_ainvoke = agent_ainvoke
         self._system_prompt = system_prompt
+        self._state_ref = state_ref
         self._allowed_output_keys = allowed_output_keys or [
             "kb_context",
             "generated_content",
@@ -60,6 +79,10 @@ class DeepAgentNode:
         ]
 
     async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+        # Sync mutable state reference so the agent's tools see live state
+        if self._state_ref is not None:
+            self._state_ref.set(state)
+
         task_parts = ["Current pipeline state:"]
         for key in ("topic", "kb_context"):
             if state.get(key):
@@ -98,12 +121,15 @@ class DeepAgentNode:
         return state
 
 
-def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
-    """Create a read_pipeline tool bound to the given pipeline state dict.
+def make_read_pipeline_tool(state: dict[str, Any] | StateRef) -> BaseTool:
+    """Create a read_pipeline tool bound to the given pipeline state.
 
-    The returned tool is a LangChain BaseTool that reads fields from the
-    pipeline state. Supports ``data.*`` for the runtime KV namespace.
+    Accepts either a plain ``dict`` (static, for testing) or a
+    ``StateRef`` (mutable, for live pipeline runs).
     """
+
+    def _resolve() -> dict[str, Any]:
+        return state.get() if isinstance(state, StateRef) else state
 
     @tool
     async def read_pipeline(key: str) -> Any:
@@ -112,11 +138,12 @@ def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
         Args:
             key: Field name to read. Use ``data.xxx`` for runtime KV values.
         """
+        current = _resolve()
         if key.startswith("data."):
             data_key = key[5:]
-            data: dict[str, Any] = state.get("data", {})
+            data: dict[str, Any] = current.get("data", {})
             return data.get(data_key)
-        return state.get(key)
+        return current.get(key)
 
     return read_pipeline
 
