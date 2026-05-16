@@ -253,3 +253,43 @@ async def test_agent_pipeline_graph_sequential_nodes() -> None:
     result = await app.ainvoke(state)
     assert calls == ["agent1", "agent2"]
     assert result["generated_content"] == "from_a2"
+
+
+@pytest.mark.asyncio
+async def test_build_pipeline_graph_with_agent_nodes() -> None:
+    """build_pipeline_graph should create agent nodes from agent config."""
+    from iperson.pipeline.graph import build_pipeline_graph
+    from iperson.pipeline.hook import HookRegistry
+    from iperson.pipeline.registry import PluginRegistry
+
+    pipeline = {
+        "nodes": [
+            {"id": "a1", "agent": {"prompt": "test.md", "model": None, "skills": []}},
+            {"id": "a2", "agent": {"prompt": "test.md", "model": None, "skills": []}},
+        ],
+    }
+
+    def fake_factory(nid, cfg, hook_orch):
+        from iperson.pipeline.agent_node import DeepAgentNode
+
+        async def fake_ainvoke(inputs: dict) -> dict:
+            from langchain_core.messages import AIMessage
+            return {"messages": [AIMessage(content='{"generated_content": "ok"}')]}
+
+        return DeepAgentNode(nid, fake_ainvoke, "test", ["generated_content"])
+
+    graph = build_pipeline_graph(
+        pipeline,
+        plugin_registry=PluginRegistry(),
+        hook_registry=HookRegistry(),
+        agent_factory=fake_factory,
+    )
+
+    app = graph.compile()
+    state: PipelineState = PipelineState(
+        status="running", kb_chunks=[], kb_context="", topic="t",
+        generated_content="", platform_contents={}, publish_results=[],
+        errors=[], data={},
+    )
+    result = await app.ainvoke(state)
+    assert result["generated_content"] == "ok"
