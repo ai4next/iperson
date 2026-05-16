@@ -1,14 +1,14 @@
-"""Deep agent pipeline integration -- DeepAgentNode, caching, and context tooling."""
+"""Deep agent pipeline integration — DeepAgentNode, caching, and context tooling."""
 
 from __future__ import annotations
-
-from typing import Any
 
 import json
 import re
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool, tool
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -33,24 +33,23 @@ class DeepAgentNode:
 
     Each instance manages a single deep agent (cached across pipeline runs).
     On each call it:
-      1. Runs before hooks
-      2. Invokes the deep agent with system_prompt + pipeline context
-      3. Parses structured JSON from the agent's final message
-      4. Writes parsed fields back to PipelineState
-      5. Runs after hooks
+      1. Invokes the deep agent with system_prompt + pipeline context
+      2. Parses structured JSON from the agent's final message
+      3. Writes parsed fields back to PipelineState
+
+    Note: Hooks (before/after) are handled by the caller in graph.py,
+    which converts between PipelineState and PipelineContext.
     """
 
     def __init__(
         self,
         node_id: str,
         agent_ainvoke: Callable[[dict], Awaitable[dict]],
-        hook_orch: Any,
         system_prompt: str,
         allowed_output_keys: list[str] | None = None,
     ) -> None:
         self.node_id = node_id
         self._agent_ainvoke = agent_ainvoke
-        self._hook_orch = hook_orch
         self._system_prompt = system_prompt
         self._allowed_output_keys = allowed_output_keys or [
             "kb_context",
@@ -60,9 +59,7 @@ class DeepAgentNode:
         ]
 
     async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
-        state = await self._hook_orch.execute_hooks(f"before.{self.node_id}", state)
-
-        task_parts = [f"Current pipeline state:"]
+        task_parts = ["Current pipeline state:"]
         for key in ("topic", "kb_context"):
             if state.get(key):
                 task_parts.append(f"  {key}: {state[key][:200]}")
@@ -81,7 +78,6 @@ class DeepAgentNode:
                 "recoverable": False,
             })
             state["status"] = "completed_with_errors"
-            state = await self._hook_orch.execute_hooks(f"after.{self.node_id}", state)
             return state
 
         final_msg = result.get("messages", [])[-1] if result.get("messages") else None
@@ -98,11 +94,7 @@ class DeepAgentNode:
                     final_msg.content
                 )
 
-        state = await self._hook_orch.execute_hooks(f"after.{self.node_id}", state)
         return state
-
-
-from langchain_core.tools import BaseTool, tool
 
 
 def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
@@ -126,3 +118,10 @@ def make_read_pipeline_tool(state: dict[str, Any]) -> BaseTool:
         return state.get(key)
 
     return read_pipeline
+
+
+__all__ = [
+    "DeepAgentNode",
+    "_extract_json",
+    "make_read_pipeline_tool",
+]

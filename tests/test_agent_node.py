@@ -67,28 +67,20 @@ async def test_read_pipeline_missing_key_returns_none() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deep_agent_node_calls_before_and_after_hooks() -> None:
-    """DeepAgentNode should invoke before/after hooks around agent execution."""
+async def test_deep_agent_node_parses_json_output() -> None:
+    """DeepAgentNode should parse JSON from agent response and update state."""
     from iperson.pipeline.agent_node import DeepAgentNode
-
-    calls: list[str] = []
 
     async def fake_ainvoke(inputs: dict) -> dict:
         return {
             "messages": [
-                AIMessage(content='{"generated_content": "hello"}'),
+                AIMessage(content='```json\n{"generated_content": "hello"}\n```'),
             ]
         }
-
-    class FakeHookOrch:
-        async def execute_hooks(self, point, state):
-            calls.append(point)
-            return state
 
     node = DeepAgentNode(
         node_id="test-node",
         agent_ainvoke=fake_ainvoke,
-        hook_orch=FakeHookOrch(),
         system_prompt="You are a test agent.",
         allowed_output_keys=["generated_content"],
     )
@@ -96,7 +88,6 @@ async def test_deep_agent_node_calls_before_and_after_hooks() -> None:
     state = _make_state()
     result = await node(state)
 
-    assert calls == ["before.test-node", "after.test-node"]
     assert result["generated_content"] == "hello"
 
 
@@ -106,17 +97,11 @@ async def test_deep_agent_node_handles_agent_error() -> None:
     from iperson.pipeline.agent_node import DeepAgentNode
 
     async def failing_ainvoke(inputs: dict) -> dict:
-        msg = "Agent crashed"
-        raise RuntimeError(msg)
-
-    class FakeHookOrch:
-        async def execute_hooks(self, point, state):
-            return state
+        raise RuntimeError("Agent crashed")
 
     node = DeepAgentNode(
         node_id="test-node",
         agent_ainvoke=failing_ainvoke,
-        hook_orch=FakeHookOrch(),
         system_prompt="test",
     )
 
@@ -130,9 +115,8 @@ async def test_deep_agent_node_handles_agent_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deep_agent_node_extracts_json_from_fenced_block() -> None:
-    """Should extract JSON from ```json ... ``` fences."""
-    from iperson.pipeline.agent_node import DeepAgentNode, _extract_json
+async def test_extract_json_from_fenced_block() -> None:
+    from iperson.pipeline.agent_node import _extract_json
 
     text = 'Some text\n```json\n{"key": "value"}\n```\nmore text'
     result = _extract_json(text)
@@ -140,8 +124,7 @@ async def test_deep_agent_node_extracts_json_from_fenced_block() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deep_agent_node_fallback_to_bare_json() -> None:
-    """Should extract bare JSON object when no fences present."""
+async def test_extract_json_bare_object() -> None:
     from iperson.pipeline.agent_node import _extract_json
 
     result = _extract_json('{"key": "value"}')
@@ -149,7 +132,7 @@ async def test_deep_agent_node_fallback_to_bare_json() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deep_agent_node_no_json_returns_none() -> None:
+async def test_extract_json_no_json_returns_none() -> None:
     from iperson.pipeline.agent_node import _extract_json
 
     result = _extract_json("Just plain text without JSON")
