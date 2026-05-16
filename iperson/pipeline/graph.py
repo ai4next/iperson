@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from langgraph.graph import StateGraph, END
 
@@ -10,6 +11,7 @@ from iperson.pipeline.plugin import StagePlugin
 from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.hook import HookRegistry
 from iperson.pipeline.hook_orchestrator import HookOrchestrator
+from iperson.pipeline.agent_factory import build_agent_node
 
 
 def _build_hook_config(node_def: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +52,26 @@ def _create_node_fn(
     return node_fn
 
 
+def _create_agent_node_fn(
+    node_def: dict[str, Any],
+    hook_orch: HookOrchestrator,
+    agent_factory: Callable,
+) -> Callable[[PipelineState], PipelineState]:
+    """Create a LangGraph node function that runs a deep agent node with hooks."""
+    agent_node = agent_factory(node_def["id"], node_def["agent"], hook_orch)
+
+    async def agent_node_fn(state: PipelineState) -> dict[str, Any]:
+        ctx = _state_to_context(state)
+        ctx = await hook_orch.execute_hooks(f"before.{node_def['id']}", ctx, node_def)
+        state = _context_to_state(ctx)
+        state = await agent_node(state)
+        ctx = _state_to_context(state)
+        ctx = await hook_orch.execute_hooks(f"after.{node_def['id']}", ctx, node_def)
+        return _context_to_state(ctx)
+
+    return agent_node_fn
+
+
 def _state_to_context(state: PipelineState) -> PipelineContext:
     """Convert PipelineState to PipelineContext for backward compat."""
     ctx = PipelineContext(
@@ -84,6 +106,7 @@ def build_pipeline_graph(
     pipeline: dict[str, Any],
     plugin_registry: PluginRegistry,
     hook_registry: HookRegistry,
+    agent_factory: Callable | None = None,
 ) -> StateGraph:
     """Build a LangGraph StateGraph from a pipeline definition."""
     hook_orch = HookOrchestrator(hook_registry)
@@ -94,10 +117,12 @@ def build_pipeline_graph(
 
     for node_def in nodes_def:
         node_id = node_def["id"]
-        plugin_id = node_def["node"]
-        plugin_class = plugin_registry.get(plugin_id)
-
-        node_fn = _create_node_fn(plugin_id, plugin_class, node_def, hook_orch)
+        if "agent" in node_def and agent_factory is not None:
+            node_fn = _create_agent_node_fn(node_def, hook_orch, agent_factory)
+        else:
+            plugin_id = node_def["node"]
+            plugin_class = plugin_registry.get(plugin_id)
+            node_fn = _create_node_fn(plugin_id, plugin_class, node_def, hook_orch)
         workflow.add_node(node_id, node_fn)
         node_ids.append(node_id)
 
@@ -123,9 +148,10 @@ async def run_pipeline(
     plugin_registry: PluginRegistry,
     hook_registry: HookRegistry,
     initial_state: PipelineState,
+    agent_factory: Callable | None = None,
 ) -> PipelineState:
     """Build and run a pipeline graph."""
-    graph = build_pipeline_graph(pipeline, plugin_registry, hook_registry)
+    graph = build_pipeline_graph(pipeline, plugin_registry, hook_registry, agent_factory)
     app = graph.compile()
     result: PipelineState = await app.ainvoke(initial_state)
     return result
