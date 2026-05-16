@@ -12,25 +12,35 @@ GLOBAL_CONFIG_PATH = PERSONAS_DIR / "config.yaml"
 DEFAULT_CONFIG: dict[str, Any] = {
     "is_active": True,
     "pipeline": {
+        "topic_selection": True,
         "nodes": [
-            {"id": "research", "node": "research.kb_retrieve", "config": {"top_k": 10}},
-            {"id": "topic_selection", "node": "builtin.topic_selection"},
+            {
+                "id": "research",
+                "agent": {
+                    "prompt": "~/.iperson/prompts/research.md",
+                    "model": "openai:gpt-4o",
+                    "skills": [],
+                },
+            },
             {
                 "id": "generate",
-                "node": "generation.article",
+                "agent": {
+                    "prompt": "~/.iperson/prompts/generate.md",
+                    "model": "anthropic:claude-sonnet-4-6",
+                    "skills": [],
+                },
                 "hooks": {
                     "after": [
                         {"hook": "quality.humanizer", "config": {"min_score": 0.35, "max_iterations": 2}}
-                    ]
+                    ],
                 },
             },
             {
                 "id": "publish",
-                "node": "publish.multiplatform",
-                "hooks": {
-                    "before": [
-                        {"hook": "quality.platformize", "config": {"platforms": ["xiaohongshu", "wechat", "zhihu"]}}
-                    ]
+                "agent": {
+                    "prompt": "~/.iperson/prompts/publish.md",
+                    "model": "openai:gpt-4o",
+                    "skills": [],
                 },
                 "config": {"platforms": ["xiaohongshu", "wechat", "zhihu"]},
             },
@@ -50,6 +60,30 @@ def load_global_config() -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+def _migrate_pipeline_config(cfg: dict[str, Any]) -> bool:
+    """Migrate old pipeline config format to current.
+
+    Returns True if the config was modified (caller should persist to disk).
+    """
+    pipeline = cfg.get("pipeline")
+    if not isinstance(pipeline, dict):
+        return False
+
+    nodes = pipeline.get("nodes", [])
+    old_topic_nodes = [n for n in nodes if n.get("node") == "builtin.topic_selection"]
+    if not old_topic_nodes:
+        return False
+
+    # Remove old builtin.topic_selection nodes
+    pipeline["nodes"] = [n for n in nodes if n.get("node") != "builtin.topic_selection"]
+
+    # Set topic_selection flag if not already present
+    if "topic_selection" not in pipeline:
+        pipeline["topic_selection"] = True
+
+    return True
+
+
 def ensure_global_config() -> dict[str, Any]:
     """Load or create the global persona config.
 
@@ -58,7 +92,11 @@ def ensure_global_config() -> dict[str, Any]:
     """
     if GLOBAL_CONFIG_PATH.exists():
         with open(GLOBAL_CONFIG_PATH) as f:
-            return yaml.safe_load(f) or {}
+            cfg = yaml.safe_load(f) or {}
+        if _migrate_pipeline_config(cfg):
+            with open(GLOBAL_CONFIG_PATH, "w") as f:
+                yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return cfg
 
     GLOBAL_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     cfg = dict(DEFAULT_CONFIG)
@@ -101,7 +139,10 @@ def load_persona(name: str) -> PersonaProfile | None:
     if config_path.exists():
         with open(config_path) as f:
             raw = yaml.safe_load(f) or {}
-            cfg.update(raw)
+        if _migrate_pipeline_config(raw):
+            with open(config_path, "w") as f:
+                yaml.dump(raw, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        cfg.update(raw)
 
     pipeline = cfg.pop("pipeline", {})
 
