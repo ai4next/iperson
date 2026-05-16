@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.middleware.skills import SkillsMiddleware
+from langchain_core.language_models import BaseChatModel
 
 from iperson.pipeline.agent_node import (
     AgentCache,
@@ -17,6 +19,7 @@ from iperson.pipeline.agent_node import (
     make_read_pipeline_tool,
 )
 
+logger = logging.getLogger(__name__)
 _cache = AgentCache()
 
 
@@ -49,6 +52,7 @@ def build_agent_node(
     agent_config: dict[str, Any],
     hook_orch: Any,
     state_provider: Any = None,
+    llm_client: Any = None,
 ) -> DeepAgentNode:
     """Create a DeepAgentNode from a pipeline node's agent config.
 
@@ -57,12 +61,14 @@ def build_agent_node(
         agent_config: The ``agent`` block from the pipeline YAML.
         hook_orch: HookOrchestrator instance for before/after hooks.
         state_provider: Optional callable returning current PipelineState.
+        llm_client: Pre-initialized LLM instance. If provided, overrides
+            the model string in agent_config (needed for custom API keys).
 
     Returns:
         Configured DeepAgentNode ready to be used as a LangGraph node.
     """
     system_prompt = load_prompt(agent_config["prompt"])
-    model = agent_config.get("model")
+    model = llm_client or agent_config.get("model")
 
     skill_sources = parse_skill_sources(agent_config.get("skills", []))
     middleware: list[Any] = []
@@ -80,9 +86,23 @@ def build_agent_node(
     state_ref = StateRef()
 
     async def _build_agent() -> Any:
-        """Create and return a compiled deep agent."""
+        """Create and return a compiled deep agent with user's LLM config."""
+        # Resolve the actual LLM client using the user's provider config
+        resolved_model = model
+        if isinstance(model, str):
+            try:
+                from iperson.utils.llm import get_llm
+                resolved_model = get_llm("default")
+                logger.info(
+                    "Agent %s: resolved model from config (%s)",
+                    node_id,
+                    getattr(resolved_model, "model", type(resolved_model).__name__),
+                )
+            except Exception as exc:
+                logger.warning("Agent %s: failed to resolve LLM, using raw model string: %s", node_id, exc)
+
         agent = create_deep_agent(
-            model=model,
+            model=resolved_model,
             system_prompt=system_prompt,
             middleware=middleware,
             tools=[make_read_pipeline_tool(state_ref)],
