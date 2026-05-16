@@ -8,8 +8,7 @@ from rich.table import Table
 
 from iperson.pipeline.hook import HookRegistry
 from iperson.pipeline.loader import FilePluginLoader, PipPluginLoader
-from iperson.pipeline.plugins import register_builtin_plugins
-from iperson.pipeline.registry import PluginRegistry
+from iperson.pipeline.agent_registry import AgentRegistry
 
 plugin_group = typer.Typer(help="Plugin management")
 console = Console()
@@ -17,9 +16,11 @@ console = Console()
 
 @plugin_group.command()
 def list_plugins() -> None:
-    """List all installed plugins and hooks."""
-    plugin_registry = PluginRegistry()
-    register_builtin_plugins(plugin_registry)
+    """List all installed plugins and agent nodes."""
+    agent_registry = AgentRegistry()
+    agent_registry.register("research", description="Research agent", category="research")
+    agent_registry.register("generate", description="Content generation agent", category="generation")
+    agent_registry.register("publish", description="Multi-platform publish agent", category="publish")
 
     hook_registry = HookRegistry()
     from iperson.pipeline.hooks import register_builtin_hooks
@@ -40,18 +41,15 @@ def list_plugins() -> None:
     for cls in pip_loader.load_hooks():
         hook_registry.register(cls)
 
-    # Display plugins
-    plugins = plugin_registry.list_plugins()
-    if plugins:
-        table = Table(title="Installed Plugins")
+    # Display agent nodes
+    nodes = agent_registry.list_nodes()
+    if nodes:
+        table = Table(title="Available Agent Nodes")
         table.add_column("ID", style="cyan")
-        table.add_column("Name")
+        table.add_column("Description")
         table.add_column("Category", style="magenta")
-        table.add_column("Version", style="dim")
-        for p in plugins:
-            table.add_row(
-                p["plugin_id"], p["name"], p["category"], p["version"]
-            )
+        for n in nodes:
+            table.add_row(n["node_id"], n["description"], n["category"])
         console.print(table)
 
     # Display hooks

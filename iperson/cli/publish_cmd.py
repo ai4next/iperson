@@ -19,7 +19,6 @@ from iperson.core.persona.profile import (
 )
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
-from iperson.pipeline.plugins import register_builtin_plugins
 from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
@@ -77,25 +76,15 @@ async def _run_pipeline(
         console.print(f"[dim]Loaded pipeline from persona:[/dim] {persona_profile.name}")
 
     # Validate topic availability
-    has_topic_selection = any(
-        n.get("node") == "builtin.topic_selection"
-        for n in pipeline_data.get("nodes", [])
-    )
+    has_topic_selection = pipeline_data.get("topic_selection", False)
     if not topic and not has_topic_selection:
         console.print(
             "[red]Error:[/red] No topic provided and pipeline does not support auto topic selection. "
-            "Either provide a topic argument or add a 'builtin.topic_selection' node to the pipeline."
+            "Either provide a topic argument or enable 'topic_selection' in the pipeline config."
         )
         raise typer.Exit(1)
 
     persona_engine = PersonaEngine(persona_profile)
-
-    # Plugin registry
-    registry = PluginRegistry()
-    register_builtin_plugins(registry)
-    if verbose:
-        registered = registry.list_plugins()
-        console.print(f"[dim]Registered {len(registered)} built-in plugins[/dim]")
 
     # Pipeline context
     ctx = PipelineContext(
@@ -112,7 +101,8 @@ async def _run_pipeline(
     except Exception as e:
         console.print(f"[yellow]Warning:[/yellow] KB retrieval failed ({e}), continuing without KB grounding.")
 
-    # Run pipeline
+    # Run pipeline (PluginRegistry kept for backward compat, unused with agent nodes)
+    registry = PluginRegistry()
     orchestrator = PipelineOrchestrator(registry)
     if verbose:
         console.print("[bold]Running pipeline...[/bold]")
@@ -171,6 +161,12 @@ async def _load_kb_context(ctx: PipelineContext, topic: str) -> PipelineContext:
                 {"text": row["content"], "metadata": {}, "doc_title": row["doc_title"]}
                 for row in rows
             ]
+
+        # Build kb_context from chunks for topic selection / generation
+        if ctx.kb_chunks:
+            ctx.kb_context = "\n\n".join(
+                c.get("text", c.get("content", "")) for c in ctx.kb_chunks
+            )
     finally:
         conn.close()
 
@@ -262,7 +258,7 @@ def _show_results(ctx: PipelineContext, out_dir: Path, verbose: bool) -> None:
         console.print()
         console.print("[bold red]Errors:[/bold red]")
         for err in ctx.errors:
-            console.print(f"  - [red]{err.get('stage', '?')}:[/red] {err.get('error', '?')}")
+            console.print(f"  - [red]{err.get('stage', '?')}:[/red] {err.get('message', '?')}")
 
 
 @publish_group.command()
