@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from warnings import warn
 
 from langgraph.graph import StateGraph, END
 
@@ -31,7 +32,17 @@ def _create_node_fn(
     node_def: dict[str, Any],
     hook_orch: HookOrchestrator,
 ) -> Callable[[PipelineState], PipelineState]:
-    """Create a LangGraph node function that executes the plugin with hooks."""
+    """Create a LangGraph node function that executes the plugin with hooks.
+
+    .. deprecated::
+        Use ``_create_agent_node_fn`` instead.
+    """
+    warn(
+        f"StagePlugin node '{plugin_id}' is deprecated. "
+        "Use agent nodes instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     async def node_fn(state: PipelineState) -> dict[str, Any]:
         ctx = _state_to_context(state)

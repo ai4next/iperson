@@ -70,4 +70,5 @@ filterwarnings = [
     'ignore:create_react_agent has been moved:DeprecationWarning',
     'ignore:StagePlugin.*is deprecated:DeprecationWarning',
     'ignore:PluginRegistry is deprecated:DeprecationWarning',
+    'ignore:StagePlugin node.*is deprecated:DeprecationWarning',
 ]
