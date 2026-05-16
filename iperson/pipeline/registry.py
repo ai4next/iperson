@@ -1,14 +1,30 @@
+"""Registry for discovering and retrieving pipeline stage plugins.
+
+.. deprecated::
+    Use ``AgentRegistry`` instead.
+"""
+
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from iperson.pipeline.plugin import StagePlugin
 
 
 class PluginRegistry:
-    """Registry for discovering and retrieving pipeline stage plugins."""
+    """Registry for discovering and retrieving pipeline stage plugins.
+
+    .. deprecated::
+        Use :class:`AgentRegistry` instead.
+    """
 
     def __init__(self) -> None:
+        warnings.warn(
+            "PluginRegistry is deprecated. Use AgentRegistry instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._plugins: dict[str, type[StagePlugin]] = {}
 
     def register(self, plugin_class: type[StagePlugin]) -> None:
@@ -19,10 +35,7 @@ class PluginRegistry:
         self._plugins[plugin_id] = plugin_class
 
     def get(self, plugin_id: str) -> type[StagePlugin]:
-        """Retrieve a plugin class by its plugin_id.
-
-        Raises KeyError with a helpful message if not found.
-        """
+        """Retrieve a plugin class by its plugin_id."""
         if plugin_id not in self._plugins:
             available = ", ".join(sorted(self._plugins.keys())) or "(none registered)"
             raise KeyError(
