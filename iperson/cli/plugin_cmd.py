@@ -6,9 +6,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from iperson.pipeline.agent_registry import AgentRegistry
 from iperson.pipeline.hook import HookRegistry
 from iperson.pipeline.loader import FilePluginLoader, PipPluginLoader
-from iperson.pipeline.agent_registry import AgentRegistry
 
 plugin_group = typer.Typer(help="Plugin management")
 console = Console()
@@ -27,17 +27,13 @@ def list_plugins() -> None:
 
     register_builtin_hooks(hook_registry)
 
-    # Load external plugins
+    # Load external hooks
     ext_dir = Path("~/.iperson/plugins").expanduser()
     file_loader = FilePluginLoader(ext_dir)
-    for cls in file_loader.load_plugins():
-        plugin_registry.register(cls)
     for cls in file_loader.load_hooks():
         hook_registry.register(cls)
 
     pip_loader = PipPluginLoader()
-    for cls in pip_loader.load_plugins():
-        plugin_registry.register(cls)
     for cls in pip_loader.load_hooks():
         hook_registry.register(cls)
 

@@ -19,7 +19,6 @@ from iperson.core.persona.profile import (
 )
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.orchestrator import PipelineOrchestrator
-from iperson.pipeline.registry import PluginRegistry
 from iperson.storage import init_db
 from iperson.storage.db import get_connection
 from iperson.utils.llm import get_llm
@@ -101,8 +100,7 @@ async def _run_pipeline(
     except Exception as e:
         console.print(f"[yellow]Warning:[/yellow] KB retrieval failed ({e}), continuing without KB grounding.")
 
-    # Run pipeline (PluginRegistry kept for backward compat, unused with agent nodes)
-    registry = PluginRegistry()
+    # Run pipeline
     orchestrator = PipelineOrchestrator()
     if verbose:
         console.print("[bold]Running pipeline...[/bold]")

@@ -30,7 +30,6 @@ class DigitalTwinAgent:
         from iperson.core.persona.profile import load_persona
         from iperson.pipeline.context import PipelineContext
         from iperson.pipeline.orchestrator import PipelineOrchestrator
-        from iperson.pipeline.registry import PluginRegistry
         from iperson.storage import init_db
         from iperson.utils.llm import get_llm
 
@@ -49,7 +48,6 @@ class DigitalTwinAgent:
             persona_profile = load_persona(self.default_persona)
             pipeline_data = persona_profile.pipeline if persona_profile else {"nodes": []}
 
-            registry = PluginRegistry()
             ctx = PipelineContext(topic=topic)
             ctx.data["llm_client"] = llm_client
             ctx.data["platform"] = self.config.get("platform", "xiaohongshu")
