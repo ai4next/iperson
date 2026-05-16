@@ -383,11 +383,13 @@ iperson publish run [TOPIC]                  # 内容主题（可选，留空则
 
 ### 内置 Node
 
+> 选题（Topic Selection）通过 pipeline-level `topic_selection: true` 开关控制，不由 Node 执行。
+
 | Node | ID | 说明 |
 |------|-----|------|
 | Research | `research.kb_retrieve` | 从知识库检索 Top-K 相关素材 |
 | Generation | `generation.article` | 结合人设与素材生成文章正文 |
-| Topic Selection | `builtin.topic_selection` | 自动选题（人设+KB匹配，内置非插件） |
+| Topic Selection | `pipeline.topic_selection` (flag) | 自动选题（人设+KB匹配，Pipeline 级别开关） |
 | Publish | `publish.multiplatform` | 多平台格式适配与内容导出 |
 
 ### 内置 Hook
@@ -422,8 +424,6 @@ nodes:
     node: research.kb_retrieve
     config:
       top_k: 10
-  - id: topic_selection
-    node: builtin.topic_selection
   - id: generate
     node: generation.article
     hooks:

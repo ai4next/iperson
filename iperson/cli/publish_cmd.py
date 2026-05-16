@@ -103,7 +103,7 @@ async def _run_pipeline(
 
     # Run pipeline (PluginRegistry kept for backward compat, unused with agent nodes)
     registry = PluginRegistry()
-    orchestrator = PipelineOrchestrator(registry)
+    orchestrator = PipelineOrchestrator()
     if verbose:
         console.print("[bold]Running pipeline...[/bold]")
 

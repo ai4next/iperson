@@ -54,7 +54,7 @@ class DigitalTwinAgent:
             ctx.data["llm_client"] = llm_client
             ctx.data["platform"] = self.config.get("platform", "xiaohongshu")
 
-            orchestrator = PipelineOrchestrator(registry)
+            orchestrator = PipelineOrchestrator()
             result = await orchestrator.run(ctx, pipeline_data)
 
             run.content_id = result.id

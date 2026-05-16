@@ -22,7 +22,7 @@ class TestTopicSelection:
     async def test_auto_select_topic_sets_ctx_topic(self) -> None:
         """When topic_selection=true and topic is empty, topic is auto-selected."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
         ctx.data["llm_client"] = DummyLLM(response="RAG技术入门")
         ctx.data["persona_engine"] = _make_persona()
@@ -38,7 +38,7 @@ class TestTopicSelection:
     async def test_skip_topic_selection_when_topic_provided(self) -> None:
         """When topic is explicitly provided, skip auto selection."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="手动输入的选题")
         ctx.data["llm_client"] = DummyLLM(response="这个不会被使用")
         ctx.data["persona_engine"] = _make_persona()
@@ -53,7 +53,7 @@ class TestTopicSelection:
     async def test_skip_topic_selection_when_disabled(self) -> None:
         """When topic_selection=false, skip even if topic is empty."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
         ctx.data["llm_client"] = DummyLLM()
         ctx.data["persona_engine"] = _make_persona()
@@ -65,25 +65,27 @@ class TestTopicSelection:
         assert result.topic == ""
 
     @pytest.mark.asyncio
-    async def test_error_on_empty_kb_context(self) -> None:
-        """When KB context is empty, topic selection should error."""
+    async def test_auto_select_topic_without_kb_context(self) -> None:
+        """When KB context is empty, topic selection falls back to LLM knowledge."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
-        ctx.data["llm_client"] = DummyLLM()
+        ctx.data["llm_client"] = DummyLLM(response="AI开发趋势")
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = ""
 
         pipeline = {"name": "test", "topic_selection": True, "nodes": []}
         result = await orchestrator.run(ctx, pipeline)
 
-        assert "TOPIC_SELECTION_FAILED" in [e["error_code"] for e in result.errors]
+        assert result.topic == "AI开发趋势"
+        assert result.status == "completed"
+        assert len(result.errors) == 0
 
     @pytest.mark.asyncio
     async def test_error_on_missing_persona(self) -> None:
         """When persona engine is missing, topic selection should error."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
         ctx.data["llm_client"] = DummyLLM()
         ctx.kb_context = "some context"
@@ -97,7 +99,7 @@ class TestTopicSelection:
     async def test_error_on_missing_llm(self) -> None:
         """When LLM client is missing, topic selection should error."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
         ctx.data["persona_engine"] = _make_persona()
         ctx.kb_context = "some context"
@@ -111,7 +113,7 @@ class TestTopicSelection:
     async def test_error_on_empty_llm_response(self) -> None:
         """When LLM returns empty string, topic selection should error."""
         registry = PluginRegistry()
-        orchestrator = PipelineOrchestrator(registry)
+        orchestrator = PipelineOrchestrator()
         ctx = PipelineContext(topic="")
         ctx.data["llm_client"] = DummyLLM(response="")
         ctx.data["persona_engine"] = _make_persona()

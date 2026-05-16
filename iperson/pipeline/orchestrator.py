@@ -3,24 +3,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from iperson.core.persona.engine import PersonaEngine
+from iperson.pipeline.agent_factory import build_agent_node
 from iperson.pipeline.context import PipelineContext
 from iperson.pipeline.graph import run_pipeline
 from iperson.pipeline.hook import HookRegistry
-from iperson.pipeline.registry import PluginRegistry
 from iperson.pipeline.state import PipelineState
-from iperson.core.persona.engine import PersonaEngine
-from iperson.pipeline.agent_factory import build_agent_node
 
 
 class PipelineOrchestrator:
-    """Orchestrates pipeline execution via LangGraph."""
+    """Orchestrates pipeline execution via LangGraph agent nodes."""
 
     def __init__(
         self,
-        registry: PluginRegistry,
         hook_registry: HookRegistry | None = None,
     ) -> None:
-        self.registry = registry
         self.hook_registry = hook_registry or HookRegistry()
 
     async def _auto_select_topic(self, ctx: PipelineContext, pipeline: dict[str, Any]) -> PipelineContext:
@@ -110,7 +107,6 @@ class PipelineOrchestrator:
 
         final_state = await run_pipeline(
             pipeline=pipeline,
-            plugin_registry=self.registry,
             hook_registry=self.hook_registry,
             initial_state=initial_state,
             agent_factory=build_agent_node,

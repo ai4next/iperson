@@ -1,4 +1,4 @@
-"""Tests for LangGraph-based pipeline orchestration."""
+"""Tests for LangGraph-based pipeline orchestration with agent nodes."""
 
 from __future__ import annotations
 
@@ -6,55 +6,54 @@ from typing import Any
 
 import pytest
 
-from iperson.pipeline.context import PipelineContext
-from iperson.pipeline.graph import build_pipeline_graph, run_pipeline
-from iperson.pipeline.plugin import StagePlugin
-from iperson.pipeline.registry import PluginRegistry
+from iperson.pipeline.agent_node import DeepAgentNode
+from iperson.pipeline.graph import run_pipeline
 from iperson.pipeline.hook import BaseHook, HookContext, HookRegistry
 from iperson.pipeline.state import PipelineState
 
 
 SAMPLE_PIPELINE = {
-    "name": "test",
     "nodes": [
-        {"id": "step1", "node": "test.stage_one", "config": {}},
-        {"id": "step2", "node": "test.stage_two", "config": {}},
+        {"id": "step1", "agent": {"prompt": "test.md", "model": None, "skills": []}},
+        {"id": "step2", "agent": {"prompt": "test.md", "model": None, "skills": []}},
     ],
 }
 
 
-class StageOne(StagePlugin):
-    plugin_id = "test.stage_one"
-    name = "Stage One"
-    category = "generation"
+def _make_fake_ainvoke(output_key: str, output_value: Any) -> Any:
+    """Create a fake agent_ainvoke that returns a JSON output."""
 
-    async def execute(
-        self, ctx: PipelineContext, config: dict[str, Any] | None = None
-    ) -> PipelineContext:
-        ctx.data["stage_one_done"] = True
-        ctx.generated_content = "hello from stage one"
-        return ctx
+    async def fake_ainvoke(inputs: dict) -> dict:
+        from langchain_core.messages import AIMessage
 
+        return {
+            "messages": [AIMessage(content=f'{{"{output_key}": "{output_value}"}}')],
+        }
 
-class StageTwo(StagePlugin):
-    plugin_id = "test.stage_two"
-    name = "Stage Two"
-    category = "quality"
-
-    async def execute(
-        self, ctx: PipelineContext, config: dict[str, Any] | None = None
-    ) -> PipelineContext:
-        ctx.data["stage_two_done"] = True
-        ctx.generated_content = ctx.generated_content.upper()
-        return ctx
+    return fake_ainvoke
 
 
-@pytest.fixture
-def registry() -> PluginRegistry:
-    r = PluginRegistry()
-    r.register(StageOne)
-    r.register(StageTwo)
-    return r
+def fake_agent_factory(nid: str, cfg: dict, hook_orch: Any) -> DeepAgentNode:
+    """Create a DeepAgentNode that produces deterministic output."""
+    if nid == "step1":
+        node = DeepAgentNode(
+            "step1",
+            _make_fake_ainvoke("generated_content", "hello from step one"),
+            "prompt",
+            ["generated_content"],
+        )
+        # Store reference so tests can check data
+        node._test_data = {}
+        return node
+    if nid == "step2":
+        return DeepAgentNode(
+            "step2",
+            _make_fake_ainvoke("generated_content", "HELLO FROM STEP ONE"),
+            "prompt",
+            ["generated_content"],
+        )
+    msg = f"Unknown node: {nid}"
+    raise ValueError(msg)
 
 
 @pytest.fixture
@@ -63,33 +62,35 @@ def hook_registry() -> HookRegistry:
 
 
 @pytest.mark.asyncio
-async def test_build_and_run_pipeline(registry: PluginRegistry, hook_registry: HookRegistry) -> None:
-    initial: PipelineState = {
-        "status": "running",
-        "data": {},
-        "errors": [],
-    }
-    result = await run_pipeline(SAMPLE_PIPELINE, registry, hook_registry, initial)
-    assert result["data"]["stage_one_done"] is True
-    assert result["data"]["stage_two_done"] is True
-    assert result["generated_content"] == "HELLO FROM STAGE ONE"
+async def test_build_and_run_pipeline(hook_registry: HookRegistry) -> None:
+    initial: PipelineState = {"status": "running", "data": {}, "errors": []}
+    result = await run_pipeline(
+        SAMPLE_PIPELINE,
+        hook_registry,
+        initial,
+        agent_factory=fake_agent_factory,
+    )
+    assert result["generated_content"] == "HELLO FROM STEP ONE"
 
 
 @pytest.mark.asyncio
-async def test_add_hook_modifies_state(registry: PluginRegistry) -> None:
+async def test_add_hook_modifies_state(hook_registry: HookRegistry) -> None:
     class TestHook(BaseHook):
-        hook_id = "test.uppercase"
-        hook_point = "after.test.stage_one"
-        name = "Uppercase Hook"
+        hook_id = "test.tracker"
+        hook_point = "after.step1"
+        name = "Tracker"
 
         async def execute(self, ctx: HookContext) -> HookContext:
-            content = ctx.pipeline_ctx.generated_content
-            ctx.pipeline_ctx.generated_content = content.upper() + " HOOKED"
+            ctx.pipeline_ctx.data["hook_ran"] = True
             return ctx
 
-    hook_registry = HookRegistry()
     hook_registry.register(TestHook)
 
     initial: PipelineState = {"status": "running", "data": {}, "errors": []}
-    result = await run_pipeline(SAMPLE_PIPELINE, registry, hook_registry, initial)
-    assert "HOOKED" in result["generated_content"]
+    result = await run_pipeline(
+        SAMPLE_PIPELINE,
+        hook_registry,
+        initial,
+        agent_factory=fake_agent_factory,
+    )
+    assert result["data"]["hook_ran"] is True

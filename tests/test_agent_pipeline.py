@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -260,7 +259,6 @@ async def test_build_pipeline_graph_with_agent_nodes() -> None:
     """build_pipeline_graph should create agent nodes from agent config."""
     from iperson.pipeline.graph import build_pipeline_graph
     from iperson.pipeline.hook import HookRegistry
-    from iperson.pipeline.registry import PluginRegistry
 
     pipeline = {
         "nodes": [
@@ -280,7 +278,6 @@ async def test_build_pipeline_graph_with_agent_nodes() -> None:
 
     graph = build_pipeline_graph(
         pipeline,
-        plugin_registry=PluginRegistry(),
         hook_registry=HookRegistry(),
         agent_factory=fake_factory,
     )
